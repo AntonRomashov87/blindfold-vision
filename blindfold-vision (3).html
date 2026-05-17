@@ -1,0 +1,4270 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Blindfold Vision — Шахи Наосліп</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=JetBrains+Mono:wght@400;600&family=Mulish:wght@400;600;700&display=swap" rel="stylesheet">
+<!-- Firebase Compat SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script>
+/* chess.js 0.13.4 — inlined for offline use */
+(function(){
+"use strict";
+/*
+ * Copyright (c) 2022, Jeff Hlywa (jhlywa@gmail.com)
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ *----------------------------------------------------------------------------*/
+
+const SYMBOLS = 'pnbrqkPNBRQK'
+
+const DEFAULT_POSITION =
+  'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+
+const TERMINATION_MARKERS = ['1-0', '0-1', '1/2-1/2', '*']
+
+const PAWN_OFFSETS = {
+  b: [16, 32, 17, 15],
+  w: [-16, -32, -17, -15],
+}
+
+const PIECE_OFFSETS = {
+  n: [-18, -33, -31, -14, 18, 33, 31, 14],
+  b: [-17, -15, 17, 15],
+  r: [-16, 1, 16, -1],
+  q: [-17, -16, -15, 1, 17, 16, 15, -1],
+  k: [-17, -16, -15, 1, 17, 16, 15, -1],
+}
+
+// prettier-ignore
+const ATTACKS = [
+  20, 0, 0, 0, 0, 0, 0, 24,  0, 0, 0, 0, 0, 0,20, 0,
+   0,20, 0, 0, 0, 0, 0, 24,  0, 0, 0, 0, 0,20, 0, 0,
+   0, 0,20, 0, 0, 0, 0, 24,  0, 0, 0, 0,20, 0, 0, 0,
+   0, 0, 0,20, 0, 0, 0, 24,  0, 0, 0,20, 0, 0, 0, 0,
+   0, 0, 0, 0,20, 0, 0, 24,  0, 0,20, 0, 0, 0, 0, 0,
+   0, 0, 0, 0, 0,20, 2, 24,  2,20, 0, 0, 0, 0, 0, 0,
+   0, 0, 0, 0, 0, 2,53, 56, 53, 2, 0, 0, 0, 0, 0, 0,
+  24,24,24,24,24,24,56,  0, 56,24,24,24,24,24,24, 0,
+   0, 0, 0, 0, 0, 2,53, 56, 53, 2, 0, 0, 0, 0, 0, 0,
+   0, 0, 0, 0, 0,20, 2, 24,  2,20, 0, 0, 0, 0, 0, 0,
+   0, 0, 0, 0,20, 0, 0, 24,  0, 0,20, 0, 0, 0, 0, 0,
+   0, 0, 0,20, 0, 0, 0, 24,  0, 0, 0,20, 0, 0, 0, 0,
+   0, 0,20, 0, 0, 0, 0, 24,  0, 0, 0, 0,20, 0, 0, 0,
+   0,20, 0, 0, 0, 0, 0, 24,  0, 0, 0, 0, 0,20, 0, 0,
+  20, 0, 0, 0, 0, 0, 0, 24,  0, 0, 0, 0, 0, 0,20
+];
+
+// prettier-ignore
+const RAYS = [
+   17,  0,  0,  0,  0,  0,  0, 16,  0,  0,  0,  0,  0,  0, 15, 0,
+    0, 17,  0,  0,  0,  0,  0, 16,  0,  0,  0,  0,  0, 15,  0, 0,
+    0,  0, 17,  0,  0,  0,  0, 16,  0,  0,  0,  0, 15,  0,  0, 0,
+    0,  0,  0, 17,  0,  0,  0, 16,  0,  0,  0, 15,  0,  0,  0, 0,
+    0,  0,  0,  0, 17,  0,  0, 16,  0,  0, 15,  0,  0,  0,  0, 0,
+    0,  0,  0,  0,  0, 17,  0, 16,  0, 15,  0,  0,  0,  0,  0, 0,
+    0,  0,  0,  0,  0,  0, 17, 16, 15,  0,  0,  0,  0,  0,  0, 0,
+    1,  1,  1,  1,  1,  1,  1,  0, -1, -1,  -1,-1, -1, -1, -1, 0,
+    0,  0,  0,  0,  0,  0,-15,-16,-17,  0,  0,  0,  0,  0,  0, 0,
+    0,  0,  0,  0,  0,-15,  0,-16,  0,-17,  0,  0,  0,  0,  0, 0,
+    0,  0,  0,  0,-15,  0,  0,-16,  0,  0,-17,  0,  0,  0,  0, 0,
+    0,  0,  0,-15,  0,  0,  0,-16,  0,  0,  0,-17,  0,  0,  0, 0,
+    0,  0,-15,  0,  0,  0,  0,-16,  0,  0,  0,  0,-17,  0,  0, 0,
+    0,-15,  0,  0,  0,  0,  0,-16,  0,  0,  0,  0,  0,-17,  0, 0,
+  -15,  0,  0,  0,  0,  0,  0,-16,  0,  0,  0,  0,  0,  0,-17
+];
+
+const SHIFTS = { p: 0, n: 1, b: 2, r: 3, q: 4, k: 5 }
+
+const BITS = {
+  NORMAL: 1,
+  CAPTURE: 2,
+  BIG_PAWN: 4,
+  EP_CAPTURE: 8,
+  PROMOTION: 16,
+  KSIDE_CASTLE: 32,
+  QSIDE_CASTLE: 64,
+}
+
+const RANK_1 = 7
+const RANK_2 = 6
+const RANK_3 = 5
+const RANK_4 = 4
+const RANK_5 = 3
+const RANK_6 = 2
+const RANK_7 = 1
+const RANK_8 = 0
+
+// prettier-ignore
+const SQUARE_MAP = {
+  a8:   0, b8:   1, c8:   2, d8:   3, e8:   4, f8:   5, g8:   6, h8:   7,
+  a7:  16, b7:  17, c7:  18, d7:  19, e7:  20, f7:  21, g7:  22, h7:  23,
+  a6:  32, b6:  33, c6:  34, d6:  35, e6:  36, f6:  37, g6:  38, h6:  39,
+  a5:  48, b5:  49, c5:  50, d5:  51, e5:  52, f5:  53, g5:  54, h5:  55,
+  a4:  64, b4:  65, c4:  66, d4:  67, e4:  68, f4:  69, g4:  70, h4:  71,
+  a3:  80, b3:  81, c3:  82, d3:  83, e3:  84, f3:  85, g3:  86, h3:  87,
+  a2:  96, b2:  97, c2:  98, d2:  99, e2: 100, f2: 101, g2: 102, h2: 103,
+  a1: 112, b1: 113, c1: 114, d1: 115, e1: 116, f1: 117, g1: 118, h1: 119
+};
+
+const ROOKS = {
+  w: [
+    { square: SQUARE_MAP.a1, flag: BITS.QSIDE_CASTLE },
+    { square: SQUARE_MAP.h1, flag: BITS.KSIDE_CASTLE },
+  ],
+  b: [
+    { square: SQUARE_MAP.a8, flag: BITS.QSIDE_CASTLE },
+    { square: SQUARE_MAP.h8, flag: BITS.KSIDE_CASTLE },
+  ],
+}
+
+const PARSER_STRICT = 0
+const PARSER_SLOPPY = 1
+
+/* this function is used to uniquely identify ambiguous moves */
+function get_disambiguator(move, moves) {
+  var from = move.from
+  var to = move.to
+  var piece = move.piece
+
+  var ambiguities = 0
+  var same_rank = 0
+  var same_file = 0
+
+  for (var i = 0, len = moves.length; i < len; i++) {
+    var ambig_from = moves[i].from
+    var ambig_to = moves[i].to
+    var ambig_piece = moves[i].piece
+
+    /* if a move of the same piece type ends on the same to square, we'll
+     * need to add a disambiguator to the algebraic notation
+     */
+    if (piece === ambig_piece && from !== ambig_from && to === ambig_to) {
+      ambiguities++
+
+      if (rank(from) === rank(ambig_from)) {
+        same_rank++
+      }
+
+      if (file(from) === file(ambig_from)) {
+        same_file++
+      }
+    }
+  }
+
+  if (ambiguities > 0) {
+    /* if there exists a similar moving piece on the same rank and file as
+     * the move in question, use the square as the disambiguator
+     */
+    if (same_rank > 0 && same_file > 0) {
+      return algebraic(from)
+    } else if (same_file > 0) {
+      /* if the moving piece rests on the same file, use the rank symbol as the
+       * disambiguator
+       */
+      return algebraic(from).charAt(1)
+    } else {
+      /* else use the file symbol */
+      return algebraic(from).charAt(0)
+    }
+  }
+
+  return ''
+}
+
+function infer_piece_type(san) {
+  var piece_type = san.charAt(0)
+  if (piece_type >= 'a' && piece_type <= 'h') {
+    var matches = san.match(/[a-h]\d.*[a-h]\d/)
+    if (matches) {
+      return undefined
+    }
+    return PAWN
+  }
+  piece_type = piece_type.toLowerCase()
+  if (piece_type === 'o') {
+    return KING
+  }
+  return piece_type
+}
+
+// parses all of the decorators out of a SAN string
+function stripped_san(move) {
+  return move.replace(/=/, '').replace(/[+#]?[?!]*$/, '')
+}
+
+/*****************************************************************************
+ * UTILITY FUNCTIONS
+ ****************************************************************************/
+function rank(i) {
+  return i >> 4
+}
+
+function file(i) {
+  return i & 15
+}
+
+function algebraic(i) {
+  var f = file(i),
+    r = rank(i)
+  return 'abcdefgh'.substring(f, f + 1) + '87654321'.substring(r, r + 1)
+}
+
+function swap_color(c) {
+  return c === WHITE ? BLACK : WHITE
+}
+
+function is_digit(c) {
+  return '0123456789'.indexOf(c) !== -1
+}
+
+function clone(obj) {
+  var dupe = obj instanceof Array ? [] : {}
+
+  for (var property in obj) {
+    if (typeof property === 'object') {
+      dupe[property] = clone(obj[property])
+    } else {
+      dupe[property] = obj[property]
+    }
+  }
+
+  return dupe
+}
+
+function trim(str) {
+  return str.replace(/^\s+|\s+$/g, '')
+}
+
+/***************************************************************************
+ * PUBLIC CONSTANTS
+ **************************************************************************/
+
+const BLACK = 'b'
+const WHITE = 'w'
+
+const EMPTY = -1
+
+const PAWN = 'p'
+const KNIGHT = 'n'
+const BISHOP = 'b'
+const ROOK = 'r'
+const QUEEN = 'q'
+const KING = 'k'
+
+const SQUARES = (function () {
+  /* from the ECMA-262 spec (section 12.6.4):
+   * "The mechanics of enumerating the properties ... is
+   * implementation dependent"
+   * so: for (var sq in SQUARES) { keys.push(sq); } might not be
+   * ordered correctly
+   */
+  var keys = []
+  for (var i = SQUARE_MAP.a8; i <= SQUARE_MAP.h1; i++) {
+    if (i & 0x88) {
+      i += 7
+      continue
+    }
+    keys.push(algebraic(i))
+  }
+  return keys
+})()
+
+const FLAGS = {
+  NORMAL: 'n',
+  CAPTURE: 'c',
+  BIG_PAWN: 'b',
+  EP_CAPTURE: 'e',
+  PROMOTION: 'p',
+  KSIDE_CASTLE: 'k',
+  QSIDE_CASTLE: 'q',
+}
+
+const Chess = function (fen) {
+  var board = new Array(128)
+  var kings = { w: EMPTY, b: EMPTY }
+  var turn = WHITE
+  var castling = { w: 0, b: 0 }
+  var ep_square = EMPTY
+  var half_moves = 0
+  var move_number = 1
+  var history = []
+  var header = {}
+  var comments = {}
+
+  /* if the user passes in a fen string, load it, else default to
+   * starting position
+   */
+  if (typeof fen === 'undefined') {
+    load(DEFAULT_POSITION)
+  } else {
+    load(fen)
+  }
+
+  function clear(keep_headers) {
+    if (typeof keep_headers === 'undefined') {
+      keep_headers = false
+    }
+
+    board = new Array(128)
+    kings = { w: EMPTY, b: EMPTY }
+    turn = WHITE
+    castling = { w: 0, b: 0 }
+    ep_square = EMPTY
+    half_moves = 0
+    move_number = 1
+    history = []
+    if (!keep_headers) header = {}
+    comments = {}
+    update_setup(generate_fen())
+  }
+
+  function prune_comments() {
+    var reversed_history = []
+    var current_comments = {}
+    var copy_comment = function (fen) {
+      if (fen in comments) {
+        current_comments[fen] = comments[fen]
+      }
+    }
+    while (history.length > 0) {
+      reversed_history.push(undo_move())
+    }
+    copy_comment(generate_fen())
+    while (reversed_history.length > 0) {
+      make_move(reversed_history.pop())
+      copy_comment(generate_fen())
+    }
+    comments = current_comments
+  }
+
+  function reset() {
+    load(DEFAULT_POSITION)
+  }
+
+  function load(fen, keep_headers) {
+    if (typeof keep_headers === 'undefined') {
+      keep_headers = false
+    }
+
+    var tokens = fen.split(/\s+/)
+    var position = tokens[0]
+    var square = 0
+
+    if (!validate_fen(fen).valid) {
+      return false
+    }
+
+    clear(keep_headers)
+
+    for (var i = 0; i < position.length; i++) {
+      var piece = position.charAt(i)
+
+      if (piece === '/') {
+        square += 8
+      } else if (is_digit(piece)) {
+        square += parseInt(piece, 10)
+      } else {
+        var color = piece < 'a' ? WHITE : BLACK
+        put({ type: piece.toLowerCase(), color: color }, algebraic(square))
+        square++
+      }
+    }
+
+    turn = tokens[1]
+
+    if (tokens[2].indexOf('K') > -1) {
+      castling.w |= BITS.KSIDE_CASTLE
+    }
+    if (tokens[2].indexOf('Q') > -1) {
+      castling.w |= BITS.QSIDE_CASTLE
+    }
+    if (tokens[2].indexOf('k') > -1) {
+      castling.b |= BITS.KSIDE_CASTLE
+    }
+    if (tokens[2].indexOf('q') > -1) {
+      castling.b |= BITS.QSIDE_CASTLE
+    }
+
+    ep_square = tokens[3] === '-' ? EMPTY : SQUARE_MAP[tokens[3]]
+    half_moves = parseInt(tokens[4], 10)
+    move_number = parseInt(tokens[5], 10)
+
+    update_setup(generate_fen())
+
+    return true
+  }
+
+  /* TODO: this function is pretty much crap - it validates structure but
+   * completely ignores content (e.g. doesn't verify that each side has a king)
+   * ... we should rewrite this, and ditch the silly error_number field while
+   * we're at it
+   */
+  function validate_fen(fen) {
+    var errors = {
+      0: 'No errors.',
+      1: 'FEN string must contain six space-delimited fields.',
+      2: '6th field (move number) must be a positive integer.',
+      3: '5th field (half move counter) must be a non-negative integer.',
+      4: '4th field (en-passant square) is invalid.',
+      5: '3rd field (castling availability) is invalid.',
+      6: '2nd field (side to move) is invalid.',
+      7: "1st field (piece positions) does not contain 8 '/'-delimited rows.",
+      8: '1st field (piece positions) is invalid [consecutive numbers].',
+      9: '1st field (piece positions) is invalid [invalid piece].',
+      10: '1st field (piece positions) is invalid [row too large].',
+      11: 'Illegal en-passant square',
+    }
+
+    /* 1st criterion: 6 space-seperated fields? */
+    var tokens = fen.split(/\s+/)
+    if (tokens.length !== 6) {
+      return { valid: false, error_number: 1, error: errors[1] }
+    }
+
+    /* 2nd criterion: move number field is a integer value > 0? */
+    if (isNaN(parseInt(tokens[5])) || parseInt(tokens[5], 10) <= 0) {
+      return { valid: false, error_number: 2, error: errors[2] }
+    }
+
+    /* 3rd criterion: half move counter is an integer >= 0? */
+    if (isNaN(parseInt(tokens[4])) || parseInt(tokens[4], 10) < 0) {
+      return { valid: false, error_number: 3, error: errors[3] }
+    }
+
+    /* 4th criterion: 4th field is a valid e.p.-string? */
+    if (!/^(-|[abcdefgh][36])$/.test(tokens[3])) {
+      return { valid: false, error_number: 4, error: errors[4] }
+    }
+
+    /* 5th criterion: 3th field is a valid castle-string? */
+    if (!/^(KQ?k?q?|Qk?q?|kq?|q|-)$/.test(tokens[2])) {
+      return { valid: false, error_number: 5, error: errors[5] }
+    }
+
+    /* 6th criterion: 2nd field is "w" (white) or "b" (black)? */
+    if (!/^(w|b)$/.test(tokens[1])) {
+      return { valid: false, error_number: 6, error: errors[6] }
+    }
+
+    /* 7th criterion: 1st field contains 8 rows? */
+    var rows = tokens[0].split('/')
+    if (rows.length !== 8) {
+      return { valid: false, error_number: 7, error: errors[7] }
+    }
+
+    /* 8th criterion: every row is valid? */
+    for (var i = 0; i < rows.length; i++) {
+      /* check for right sum of fields AND not two numbers in succession */
+      var sum_fields = 0
+      var previous_was_number = false
+
+      for (var k = 0; k < rows[i].length; k++) {
+        if (!isNaN(rows[i][k])) {
+          if (previous_was_number) {
+            return { valid: false, error_number: 8, error: errors[8] }
+          }
+          sum_fields += parseInt(rows[i][k], 10)
+          previous_was_number = true
+        } else {
+          if (!/^[prnbqkPRNBQK]$/.test(rows[i][k])) {
+            return { valid: false, error_number: 9, error: errors[9] }
+          }
+          sum_fields += 1
+          previous_was_number = false
+        }
+      }
+      if (sum_fields !== 8) {
+        return { valid: false, error_number: 10, error: errors[10] }
+      }
+    }
+
+    if (
+      (tokens[3][1] == '3' && tokens[1] == 'w') ||
+      (tokens[3][1] == '6' && tokens[1] == 'b')
+    ) {
+      return { valid: false, error_number: 11, error: errors[11] }
+    }
+
+    /* everything's okay! */
+    return { valid: true, error_number: 0, error: errors[0] }
+  }
+
+  function generate_fen() {
+    var empty = 0
+    var fen = ''
+
+    for (var i = SQUARE_MAP.a8; i <= SQUARE_MAP.h1; i++) {
+      if (board[i] == null) {
+        empty++
+      } else {
+        if (empty > 0) {
+          fen += empty
+          empty = 0
+        }
+        var color = board[i].color
+        var piece = board[i].type
+
+        fen += color === WHITE ? piece.toUpperCase() : piece.toLowerCase()
+      }
+
+      if ((i + 1) & 0x88) {
+        if (empty > 0) {
+          fen += empty
+        }
+
+        if (i !== SQUARE_MAP.h1) {
+          fen += '/'
+        }
+
+        empty = 0
+        i += 8
+      }
+    }
+
+    var cflags = ''
+    if (castling[WHITE] & BITS.KSIDE_CASTLE) {
+      cflags += 'K'
+    }
+    if (castling[WHITE] & BITS.QSIDE_CASTLE) {
+      cflags += 'Q'
+    }
+    if (castling[BLACK] & BITS.KSIDE_CASTLE) {
+      cflags += 'k'
+    }
+    if (castling[BLACK] & BITS.QSIDE_CASTLE) {
+      cflags += 'q'
+    }
+
+    /* do we have an empty castling flag? */
+    cflags = cflags || '-'
+    var epflags = ep_square === EMPTY ? '-' : algebraic(ep_square)
+
+    return [fen, turn, cflags, epflags, half_moves, move_number].join(' ')
+  }
+
+  function set_header(args) {
+    for (var i = 0; i < args.length; i += 2) {
+      if (typeof args[i] === 'string' && typeof args[i + 1] === 'string') {
+        header[args[i]] = args[i + 1]
+      }
+    }
+    return header
+  }
+
+  /* called when the initial board setup is changed with put() or remove().
+   * modifies the SetUp and FEN properties of the header object.  if the FEN is
+   * equal to the default position, the SetUp and FEN are deleted
+   * the setup is only updated if history.length is zero, ie moves haven't been
+   * made.
+   */
+  function update_setup(fen) {
+    if (history.length > 0) return
+
+    if (fen !== DEFAULT_POSITION) {
+      header['SetUp'] = '1'
+      header['FEN'] = fen
+    } else {
+      delete header['SetUp']
+      delete header['FEN']
+    }
+  }
+
+  function get(square) {
+    var piece = board[SQUARE_MAP[square]]
+    return piece ? { type: piece.type, color: piece.color } : null
+  }
+
+  function put(piece, square) {
+    /* check for valid piece object */
+    if (!('type' in piece && 'color' in piece)) {
+      return false
+    }
+
+    /* check for piece */
+    if (SYMBOLS.indexOf(piece.type.toLowerCase()) === -1) {
+      return false
+    }
+
+    /* check for valid square */
+    if (!(square in SQUARE_MAP)) {
+      return false
+    }
+
+    var sq = SQUARE_MAP[square]
+
+    /* don't let the user place more than one king */
+    if (
+      piece.type == KING &&
+      !(kings[piece.color] == EMPTY || kings[piece.color] == sq)
+    ) {
+      return false
+    }
+
+    board[sq] = { type: piece.type, color: piece.color }
+    if (piece.type === KING) {
+      kings[piece.color] = sq
+    }
+
+    update_setup(generate_fen())
+
+    return true
+  }
+
+  function remove(square) {
+    var piece = get(square)
+    board[SQUARE_MAP[square]] = null
+    if (piece && piece.type === KING) {
+      kings[piece.color] = EMPTY
+    }
+
+    update_setup(generate_fen())
+
+    return piece
+  }
+
+  function build_move(board, from, to, flags, promotion) {
+    var move = {
+      color: turn,
+      from: from,
+      to: to,
+      flags: flags,
+      piece: board[from].type,
+    }
+
+    if (promotion) {
+      move.flags |= BITS.PROMOTION
+      move.promotion = promotion
+    }
+
+    if (board[to]) {
+      move.captured = board[to].type
+    } else if (flags & BITS.EP_CAPTURE) {
+      move.captured = PAWN
+    }
+    return move
+  }
+
+  function generate_moves(options) {
+    function add_move(board, moves, from, to, flags) {
+      /* if pawn promotion */
+      if (
+        board[from].type === PAWN &&
+        (rank(to) === RANK_8 || rank(to) === RANK_1)
+      ) {
+        var pieces = [QUEEN, ROOK, BISHOP, KNIGHT]
+        for (var i = 0, len = pieces.length; i < len; i++) {
+          moves.push(build_move(board, from, to, flags, pieces[i]))
+        }
+      } else {
+        moves.push(build_move(board, from, to, flags))
+      }
+    }
+
+    var moves = []
+    var us = turn
+    var them = swap_color(us)
+    var second_rank = { b: RANK_7, w: RANK_2 }
+
+    var first_sq = SQUARE_MAP.a8
+    var last_sq = SQUARE_MAP.h1
+    var single_square = false
+
+    /* do we want legal moves? */
+    var legal =
+      typeof options !== 'undefined' && 'legal' in options
+        ? options.legal
+        : true
+
+    var piece_type =
+      typeof options !== 'undefined' &&
+      'piece' in options &&
+      typeof options.piece === 'string'
+        ? options.piece.toLowerCase()
+        : true
+
+    /* are we generating moves for a single square? */
+    if (typeof options !== 'undefined' && 'square' in options) {
+      if (options.square in SQUARE_MAP) {
+        first_sq = last_sq = SQUARE_MAP[options.square]
+        single_square = true
+      } else {
+        /* invalid square */
+        return []
+      }
+    }
+
+    for (var i = first_sq; i <= last_sq; i++) {
+      /* did we run off the end of the board */
+      if (i & 0x88) {
+        i += 7
+        continue
+      }
+
+      var piece = board[i]
+      if (piece == null || piece.color !== us) {
+        continue
+      }
+
+      if (piece.type === PAWN && (piece_type === true || piece_type === PAWN)) {
+        /* single square, non-capturing */
+        var square = i + PAWN_OFFSETS[us][0]
+        if (board[square] == null) {
+          add_move(board, moves, i, square, BITS.NORMAL)
+
+          /* double square */
+          var square = i + PAWN_OFFSETS[us][1]
+          if (second_rank[us] === rank(i) && board[square] == null) {
+            add_move(board, moves, i, square, BITS.BIG_PAWN)
+          }
+        }
+
+        /* pawn captures */
+        for (j = 2; j < 4; j++) {
+          var square = i + PAWN_OFFSETS[us][j]
+          if (square & 0x88) continue
+
+          if (board[square] != null && board[square].color === them) {
+            add_move(board, moves, i, square, BITS.CAPTURE)
+          } else if (square === ep_square) {
+            add_move(board, moves, i, ep_square, BITS.EP_CAPTURE)
+          }
+        }
+      } else if (piece_type === true || piece_type === piece.type) {
+        for (var j = 0, len = PIECE_OFFSETS[piece.type].length; j < len; j++) {
+          var offset = PIECE_OFFSETS[piece.type][j]
+          var square = i
+
+          while (true) {
+            square += offset
+            if (square & 0x88) break
+
+            if (board[square] == null) {
+              add_move(board, moves, i, square, BITS.NORMAL)
+            } else {
+              if (board[square].color === us) break
+              add_move(board, moves, i, square, BITS.CAPTURE)
+              break
+            }
+
+            /* break, if knight or king */
+            if (piece.type === 'n' || piece.type === 'k') break
+          }
+        }
+      }
+    }
+
+    /* check for castling if: a) we're generating all moves, or b) we're doing
+     * single square move generation on the king's square
+     */
+    if (piece_type === true || piece_type === KING) {
+      if (!single_square || last_sq === kings[us]) {
+        /* king-side castling */
+        if (castling[us] & BITS.KSIDE_CASTLE) {
+          var castling_from = kings[us]
+          var castling_to = castling_from + 2
+
+          if (
+            board[castling_from + 1] == null &&
+            board[castling_to] == null &&
+            !attacked(them, kings[us]) &&
+            !attacked(them, castling_from + 1) &&
+            !attacked(them, castling_to)
+          ) {
+            add_move(board, moves, kings[us], castling_to, BITS.KSIDE_CASTLE)
+          }
+        }
+
+        /* queen-side castling */
+        if (castling[us] & BITS.QSIDE_CASTLE) {
+          var castling_from = kings[us]
+          var castling_to = castling_from - 2
+
+          if (
+            board[castling_from - 1] == null &&
+            board[castling_from - 2] == null &&
+            board[castling_from - 3] == null &&
+            !attacked(them, kings[us]) &&
+            !attacked(them, castling_from - 1) &&
+            !attacked(them, castling_to)
+          ) {
+            add_move(board, moves, kings[us], castling_to, BITS.QSIDE_CASTLE)
+          }
+        }
+      }
+    }
+
+    /* return all pseudo-legal moves (this includes moves that allow the king
+     * to be captured)
+     */
+    if (!legal) {
+      return moves
+    }
+
+    /* filter out illegal moves */
+    var legal_moves = []
+    for (var i = 0, len = moves.length; i < len; i++) {
+      make_move(moves[i])
+      if (!king_attacked(us)) {
+        legal_moves.push(moves[i])
+      }
+      undo_move()
+    }
+
+    return legal_moves
+  }
+
+  /* convert a move from 0x88 coordinates to Standard Algebraic Notation
+   * (SAN)
+   *
+   * @param {boolean} sloppy Use the sloppy SAN generator to work around over
+   * disambiguation bugs in Fritz and Chessbase.  See below:
+   *
+   * r1bqkbnr/ppp2ppp/2n5/1B1pP3/4P3/8/PPPP2PP/RNBQK1NR b KQkq - 2 4
+   * 4. ... Nge7 is overly disambiguated because the knight on c6 is pinned
+   * 4. ... Ne7 is technically the valid SAN
+   */
+  function move_to_san(move, moves) {
+    var output = ''
+
+    if (move.flags & BITS.KSIDE_CASTLE) {
+      output = 'O-O'
+    } else if (move.flags & BITS.QSIDE_CASTLE) {
+      output = 'O-O-O'
+    } else {
+      if (move.piece !== PAWN) {
+        var disambiguator = get_disambiguator(move, moves)
+        output += move.piece.toUpperCase() + disambiguator
+      }
+
+      if (move.flags & (BITS.CAPTURE | BITS.EP_CAPTURE)) {
+        if (move.piece === PAWN) {
+          output += algebraic(move.from)[0]
+        }
+        output += 'x'
+      }
+
+      output += algebraic(move.to)
+
+      if (move.flags & BITS.PROMOTION) {
+        output += '=' + move.promotion.toUpperCase()
+      }
+    }
+
+    make_move(move)
+    if (in_check()) {
+      if (in_checkmate()) {
+        output += '#'
+      } else {
+        output += '+'
+      }
+    }
+    undo_move()
+
+    return output
+  }
+
+  function attacked(color, square) {
+    for (var i = SQUARE_MAP.a8; i <= SQUARE_MAP.h1; i++) {
+      /* did we run off the end of the board */
+      if (i & 0x88) {
+        i += 7
+        continue
+      }
+
+      /* if empty square or wrong color */
+      if (board[i] == null || board[i].color !== color) continue
+
+      var piece = board[i]
+      var difference = i - square
+      var index = difference + 119
+
+      if (ATTACKS[index] & (1 << SHIFTS[piece.type])) {
+        if (piece.type === PAWN) {
+          if (difference > 0) {
+            if (piece.color === WHITE) return true
+          } else {
+            if (piece.color === BLACK) return true
+          }
+          continue
+        }
+
+        /* if the piece is a knight or a king */
+        if (piece.type === 'n' || piece.type === 'k') return true
+
+        var offset = RAYS[index]
+        var j = i + offset
+
+        var blocked = false
+        while (j !== square) {
+          if (board[j] != null) {
+            blocked = true
+            break
+          }
+          j += offset
+        }
+
+        if (!blocked) return true
+      }
+    }
+
+    return false
+  }
+
+  function king_attacked(color) {
+    return attacked(swap_color(color), kings[color])
+  }
+
+  function in_check() {
+    return king_attacked(turn)
+  }
+
+  function in_checkmate() {
+    return in_check() && generate_moves().length === 0
+  }
+
+  function in_stalemate() {
+    return !in_check() && generate_moves().length === 0
+  }
+
+  function insufficient_material() {
+    var pieces = {}
+    var bishops = []
+    var num_pieces = 0
+    var sq_color = 0
+
+    for (var i = SQUARE_MAP.a8; i <= SQUARE_MAP.h1; i++) {
+      sq_color = (sq_color + 1) % 2
+      if (i & 0x88) {
+        i += 7
+        continue
+      }
+
+      var piece = board[i]
+      if (piece) {
+        pieces[piece.type] = piece.type in pieces ? pieces[piece.type] + 1 : 1
+        if (piece.type === BISHOP) {
+          bishops.push(sq_color)
+        }
+        num_pieces++
+      }
+    }
+
+    /* k vs. k */
+    if (num_pieces === 2) {
+      return true
+    } else if (
+      /* k vs. kn .... or .... k vs. kb */
+      num_pieces === 3 &&
+      (pieces[BISHOP] === 1 || pieces[KNIGHT] === 1)
+    ) {
+      return true
+    } else if (num_pieces === pieces[BISHOP] + 2) {
+      /* kb vs. kb where any number of bishops are all on the same color */
+      var sum = 0
+      var len = bishops.length
+      for (var i = 0; i < len; i++) {
+        sum += bishops[i]
+      }
+      if (sum === 0 || sum === len) {
+        return true
+      }
+    }
+
+    return false
+  }
+
+  function in_threefold_repetition() {
+    /* TODO: while this function is fine for casual use, a better
+     * implementation would use a Zobrist key (instead of FEN). the
+     * Zobrist key would be maintained in the make_move/undo_move functions,
+     * avoiding the costly that we do below.
+     */
+    var moves = []
+    var positions = {}
+    var repetition = false
+
+    while (true) {
+      var move = undo_move()
+      if (!move) break
+      moves.push(move)
+    }
+
+    while (true) {
+      /* remove the last two fields in the FEN string, they're not needed
+       * when checking for draw by rep */
+      var fen = generate_fen().split(' ').slice(0, 4).join(' ')
+
+      /* has the position occurred three or move times */
+      positions[fen] = fen in positions ? positions[fen] + 1 : 1
+      if (positions[fen] >= 3) {
+        repetition = true
+      }
+
+      if (!moves.length) {
+        break
+      }
+      make_move(moves.pop())
+    }
+
+    return repetition
+  }
+
+  function push(move) {
+    history.push({
+      move: move,
+      kings: { b: kings.b, w: kings.w },
+      turn: turn,
+      castling: { b: castling.b, w: castling.w },
+      ep_square: ep_square,
+      half_moves: half_moves,
+      move_number: move_number,
+    })
+  }
+
+  function make_move(move) {
+    var us = turn
+    var them = swap_color(us)
+    push(move)
+
+    board[move.to] = board[move.from]
+    board[move.from] = null
+
+    /* if ep capture, remove the captured pawn */
+    if (move.flags & BITS.EP_CAPTURE) {
+      if (turn === BLACK) {
+        board[move.to - 16] = null
+      } else {
+        board[move.to + 16] = null
+      }
+    }
+
+    /* if pawn promotion, replace with new piece */
+    if (move.flags & BITS.PROMOTION) {
+      board[move.to] = { type: move.promotion, color: us }
+    }
+
+    /* if we moved the king */
+    if (board[move.to].type === KING) {
+      kings[board[move.to].color] = move.to
+
+      /* if we castled, move the rook next to the king */
+      if (move.flags & BITS.KSIDE_CASTLE) {
+        var castling_to = move.to - 1
+        var castling_from = move.to + 1
+        board[castling_to] = board[castling_from]
+        board[castling_from] = null
+      } else if (move.flags & BITS.QSIDE_CASTLE) {
+        var castling_to = move.to + 1
+        var castling_from = move.to - 2
+        board[castling_to] = board[castling_from]
+        board[castling_from] = null
+      }
+
+      /* turn off castling */
+      castling[us] = ''
+    }
+
+    /* turn off castling if we move a rook */
+    if (castling[us]) {
+      for (var i = 0, len = ROOKS[us].length; i < len; i++) {
+        if (
+          move.from === ROOKS[us][i].square &&
+          castling[us] & ROOKS[us][i].flag
+        ) {
+          castling[us] ^= ROOKS[us][i].flag
+          break
+        }
+      }
+    }
+
+    /* turn off castling if we capture a rook */
+    if (castling[them]) {
+      for (var i = 0, len = ROOKS[them].length; i < len; i++) {
+        if (
+          move.to === ROOKS[them][i].square &&
+          castling[them] & ROOKS[them][i].flag
+        ) {
+          castling[them] ^= ROOKS[them][i].flag
+          break
+        }
+      }
+    }
+
+    /* if big pawn move, update the en passant square */
+    if (move.flags & BITS.BIG_PAWN) {
+      if (turn === 'b') {
+        ep_square = move.to - 16
+      } else {
+        ep_square = move.to + 16
+      }
+    } else {
+      ep_square = EMPTY
+    }
+
+    /* reset the 50 move counter if a pawn is moved or a piece is captured */
+    if (move.piece === PAWN) {
+      half_moves = 0
+    } else if (move.flags & (BITS.CAPTURE | BITS.EP_CAPTURE)) {
+      half_moves = 0
+    } else {
+      half_moves++
+    }
+
+    if (turn === BLACK) {
+      move_number++
+    }
+    turn = swap_color(turn)
+  }
+
+  function undo_move() {
+    var old = history.pop()
+    if (old == null) {
+      return null
+    }
+
+    var move = old.move
+    kings = old.kings
+    turn = old.turn
+    castling = old.castling
+    ep_square = old.ep_square
+    half_moves = old.half_moves
+    move_number = old.move_number
+
+    var us = turn
+    var them = swap_color(turn)
+
+    board[move.from] = board[move.to]
+    board[move.from].type = move.piece // to undo any promotions
+    board[move.to] = null
+
+    if (move.flags & BITS.CAPTURE) {
+      board[move.to] = { type: move.captured, color: them }
+    } else if (move.flags & BITS.EP_CAPTURE) {
+      var index
+      if (us === BLACK) {
+        index = move.to - 16
+      } else {
+        index = move.to + 16
+      }
+      board[index] = { type: PAWN, color: them }
+    }
+
+    if (move.flags & (BITS.KSIDE_CASTLE | BITS.QSIDE_CASTLE)) {
+      var castling_to, castling_from
+      if (move.flags & BITS.KSIDE_CASTLE) {
+        castling_to = move.to + 1
+        castling_from = move.to - 1
+      } else if (move.flags & BITS.QSIDE_CASTLE) {
+        castling_to = move.to - 2
+        castling_from = move.to + 1
+      }
+
+      board[castling_to] = board[castling_from]
+      board[castling_from] = null
+    }
+
+    return move
+  }
+
+  // convert a move from Standard Algebraic Notation (SAN) to 0x88 coordinates
+  function move_from_san(move, sloppy) {
+    // strip off any move decorations: e.g Nf3+?! becomes Nf3
+    var clean_move = stripped_san(move)
+
+    // the move parsers is a 2-step state
+    for (var parser = 0; parser < 2; parser++) {
+      if (parser == PARSER_SLOPPY) {
+        // only run the sloppy parse if explicitly requested
+        if (!sloppy) {
+          return null
+        }
+
+        // The sloppy parser allows the user to parse non-standard chess
+        // notations. This parser is opt-in (by specifying the
+        // '{ sloppy: true }' setting) and is only run after the Standard
+        // Algebraic Notation (SAN) parser has failed.
+        //
+        // When running the sloppy parser, we'll run a regex to grab the piece,
+        // the to/from square, and an optional promotion piece. This regex will
+        // parse common non-standard notation like: Pe2-e4, Rc1c4, Qf3xf7,
+        // f7f8q, b1c3
+
+        // NOTE: Some positions and moves may be ambiguous when using the
+        // sloppy parser. For example, in this position:
+        // 6k1/8/8/B7/8/8/8/BN4K1 w - - 0 1, the move b1c3 may be interpreted
+        // as Nc3 or B1c3 (a disambiguated bishop move). In these cases, the
+        // sloppy parser will default to the most most basic interpretation
+        // (which is b1c3 parsing to Nc3).
+
+        // FIXME: these var's are hoisted into function scope, this will need
+        // to change when switching to const/let
+
+        var overly_disambiguated = false
+
+        var matches = clean_move.match(
+          /([pnbrqkPNBRQK])?([a-h][1-8])x?-?([a-h][1-8])([qrbnQRBN])?/
+        )
+        if (matches) {
+          var piece = matches[1]
+          var from = matches[2]
+          var to = matches[3]
+          var promotion = matches[4]
+
+          if (from.length == 1) {
+            overly_disambiguated = true
+          }
+        } else {
+          // The [a-h]?[1-8]? portion of the regex below handles moves that may
+          // be overly disambiguated (e.g. Nge7 is unnecessary and non-standard
+          // when there is one legal knight move to e7). In this case, the value
+          // of 'from' variable will be a rank or file, not a square.
+          var matches = clean_move.match(
+            /([pnbrqkPNBRQK])?([a-h]?[1-8]?)x?-?([a-h][1-8])([qrbnQRBN])?/
+          )
+
+          if (matches) {
+            var piece = matches[1]
+            var from = matches[2]
+            var to = matches[3]
+            var promotion = matches[4]
+
+            if (from.length == 1) {
+              var overly_disambiguated = true
+            }
+          }
+        }
+      }
+
+      var piece_type = infer_piece_type(clean_move)
+      var moves = generate_moves({
+        legal: true,
+        piece: piece ? piece : piece_type,
+      })
+
+      for (var i = 0, len = moves.length; i < len; i++) {
+        switch (parser) {
+          case PARSER_STRICT: {
+            if (clean_move === stripped_san(move_to_san(moves[i], moves))) {
+              return moves[i]
+            }
+            break
+          }
+          case PARSER_SLOPPY: {
+            if (matches) {
+              // hand-compare move properties with the results from our sloppy
+              // regex
+              if (
+                (!piece || piece.toLowerCase() == moves[i].piece) &&
+                SQUARE_MAP[from] == moves[i].from &&
+                SQUARE_MAP[to] == moves[i].to &&
+                (!promotion || promotion.toLowerCase() == moves[i].promotion)
+              ) {
+                return moves[i]
+              } else if (overly_disambiguated) {
+                // SPECIAL CASE: we parsed a move string that may have an
+                // unneeded rank/file disambiguator (e.g. Nge7).  The 'from'
+                // variable will
+                var square = algebraic(moves[i].from)
+                if (
+                  (!piece || piece.toLowerCase() == moves[i].piece) &&
+                  SQUARE_MAP[to] == moves[i].to &&
+                  (from == square[0] || from == square[1]) &&
+                  (!promotion || promotion.toLowerCase() == moves[i].promotion)
+                ) {
+                  return moves[i]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return null
+  }
+
+  /* pretty = external move object */
+  function make_pretty(ugly_move) {
+    var move = clone(ugly_move)
+    move.san = move_to_san(move, generate_moves({ legal: true }))
+    move.to = algebraic(move.to)
+    move.from = algebraic(move.from)
+
+    var flags = ''
+
+    for (var flag in BITS) {
+      if (BITS[flag] & move.flags) {
+        flags += FLAGS[flag]
+      }
+    }
+    move.flags = flags
+
+    return move
+  }
+
+  /*****************************************************************************
+   * DEBUGGING UTILITIES
+   ****************************************************************************/
+  function perft(depth) {
+    var moves = generate_moves({ legal: false })
+    var nodes = 0
+    var color = turn
+
+    for (var i = 0, len = moves.length; i < len; i++) {
+      make_move(moves[i])
+      if (!king_attacked(color)) {
+        if (depth - 1 > 0) {
+          var child_nodes = perft(depth - 1)
+          nodes += child_nodes
+        } else {
+          nodes++
+        }
+      }
+      undo_move()
+    }
+
+    return nodes
+  }
+
+  return {
+    /***************************************************************************
+     * PUBLIC API
+     **************************************************************************/
+    load: function (fen) {
+      return load(fen)
+    },
+
+    reset: function () {
+      return reset()
+    },
+
+    moves: function (options) {
+      /* The internal representation of a chess move is in 0x88 format, and
+       * not meant to be human-readable.  The code below converts the 0x88
+       * square coordinates to algebraic coordinates.  It also prunes an
+       * unnecessary move keys resulting from a verbose call.
+       */
+
+      var ugly_moves = generate_moves(options)
+      var moves = []
+
+      for (var i = 0, len = ugly_moves.length; i < len; i++) {
+        /* does the user want a full move object (most likely not), or just
+         * SAN
+         */
+        if (
+          typeof options !== 'undefined' &&
+          'verbose' in options &&
+          options.verbose
+        ) {
+          moves.push(make_pretty(ugly_moves[i]))
+        } else {
+          moves.push(
+            move_to_san(ugly_moves[i], generate_moves({ legal: true }))
+          )
+        }
+      }
+
+      return moves
+    },
+
+    in_check: function () {
+      return in_check()
+    },
+
+    in_checkmate: function () {
+      return in_checkmate()
+    },
+
+    in_stalemate: function () {
+      return in_stalemate()
+    },
+
+    in_draw: function () {
+      return (
+        half_moves >= 100 ||
+        in_stalemate() ||
+        insufficient_material() ||
+        in_threefold_repetition()
+      )
+    },
+
+    insufficient_material: function () {
+      return insufficient_material()
+    },
+
+    in_threefold_repetition: function () {
+      return in_threefold_repetition()
+    },
+
+    game_over: function () {
+      return (
+        half_moves >= 100 ||
+        in_checkmate() ||
+        in_stalemate() ||
+        insufficient_material() ||
+        in_threefold_repetition()
+      )
+    },
+
+    validate_fen: function (fen) {
+      return validate_fen(fen)
+    },
+
+    fen: function () {
+      return generate_fen()
+    },
+
+    board: function () {
+      var output = [],
+        row = []
+
+      for (var i = SQUARE_MAP.a8; i <= SQUARE_MAP.h1; i++) {
+        if (board[i] == null) {
+          row.push(null)
+        } else {
+          row.push({
+            square: algebraic(i),
+            type: board[i].type,
+            color: board[i].color,
+          })
+        }
+        if ((i + 1) & 0x88) {
+          output.push(row)
+          row = []
+          i += 8
+        }
+      }
+
+      return output
+    },
+
+    pgn: function (options) {
+      /* using the specification from http://www.chessclub.com/help/PGN-spec
+       * example for html usage: .pgn({ max_width: 72, newline_char: "<br />" })
+       */
+      var newline =
+        typeof options === 'object' && typeof options.newline_char === 'string'
+          ? options.newline_char
+          : '\n'
+      var max_width =
+        typeof options === 'object' && typeof options.max_width === 'number'
+          ? options.max_width
+          : 0
+      var result = []
+      var header_exists = false
+
+      /* add the PGN header information */
+      for (var i in header) {
+        /* TODO: order of enumerated properties in header object is not
+         * guaranteed, see ECMA-262 spec (section 12.6.4)
+         */
+        result.push('[' + i + ' "' + header[i] + '"]' + newline)
+        header_exists = true
+      }
+
+      if (header_exists && history.length) {
+        result.push(newline)
+      }
+
+      var append_comment = function (move_string) {
+        var comment = comments[generate_fen()]
+        if (typeof comment !== 'undefined') {
+          var delimiter = move_string.length > 0 ? ' ' : ''
+          move_string = `${move_string}${delimiter}{${comment}}`
+        }
+        return move_string
+      }
+
+      /* pop all of history onto reversed_history */
+      var reversed_history = []
+      while (history.length > 0) {
+        reversed_history.push(undo_move())
+      }
+
+      var moves = []
+      var move_string = ''
+
+      /* special case of a commented starting position with no moves */
+      if (reversed_history.length === 0) {
+        moves.push(append_comment(''))
+      }
+
+      /* build the list of moves.  a move_string looks like: "3. e3 e6" */
+      while (reversed_history.length > 0) {
+        move_string = append_comment(move_string)
+        var move = reversed_history.pop()
+
+        /* if the position started with black to move, start PGN with #. ... */
+        if (!history.length && move.color === 'b') {
+          const prefix = `${move_number}. ...`
+          /* is there a comment preceding the first move? */
+          move_string = move_string ? `${move_string} ${prefix}` : prefix
+        } else if (move.color === 'w') {
+          /* store the previous generated move_string if we have one */
+          if (move_string.length) {
+            moves.push(move_string)
+          }
+          move_string = move_number + '.'
+        }
+
+        move_string =
+          move_string + ' ' + move_to_san(move, generate_moves({ legal: true }))
+        make_move(move)
+      }
+
+      /* are there any other leftover moves? */
+      if (move_string.length) {
+        moves.push(append_comment(move_string))
+      }
+
+      /* is there a result? */
+      if (typeof header.Result !== 'undefined') {
+        moves.push(header.Result)
+      }
+
+      /* history should be back to what it was before we started generating PGN,
+       * so join together moves
+       */
+      if (max_width === 0) {
+        return result.join('') + moves.join(' ')
+      }
+
+      var strip = function () {
+        if (result.length > 0 && result[result.length - 1] === ' ') {
+          result.pop()
+          return true
+        }
+        return false
+      }
+
+      /* NB: this does not preserve comment whitespace. */
+      var wrap_comment = function (width, move) {
+        for (var token of move.split(' ')) {
+          if (!token) {
+            continue
+          }
+          if (width + token.length > max_width) {
+            while (strip()) {
+              width--
+            }
+            result.push(newline)
+            width = 0
+          }
+          result.push(token)
+          width += token.length
+          result.push(' ')
+          width++
+        }
+        if (strip()) {
+          width--
+        }
+        return width
+      }
+
+      /* wrap the PGN output at max_width */
+      var current_width = 0
+      for (var i = 0; i < moves.length; i++) {
+        if (current_width + moves[i].length > max_width) {
+          if (moves[i].includes('{')) {
+            current_width = wrap_comment(current_width, moves[i])
+            continue
+          }
+        }
+        /* if the current move will push past max_width */
+        if (current_width + moves[i].length > max_width && i !== 0) {
+          /* don't end the line with whitespace */
+          if (result[result.length - 1] === ' ') {
+            result.pop()
+          }
+
+          result.push(newline)
+          current_width = 0
+        } else if (i !== 0) {
+          result.push(' ')
+          current_width++
+        }
+        result.push(moves[i])
+        current_width += moves[i].length
+      }
+
+      return result.join('')
+    },
+
+    load_pgn: function (pgn, options) {
+      // allow the user to specify the sloppy move parser to work around over
+      // disambiguation bugs in Fritz and Chessbase
+      var sloppy =
+        typeof options !== 'undefined' && 'sloppy' in options
+          ? options.sloppy
+          : false
+
+      function mask(str) {
+        return str.replace(/\\/g, '\\')
+      }
+
+      function parse_pgn_header(header, options) {
+        var newline_char =
+          typeof options === 'object' &&
+          typeof options.newline_char === 'string'
+            ? options.newline_char
+            : '\r?\n'
+        var header_obj = {}
+        var headers = header.split(new RegExp(mask(newline_char)))
+        var key = ''
+        var value = ''
+
+        for (var i = 0; i < headers.length; i++) {
+          var regex = /^\s*\[([A-Za-z]+)\s*"(.*)"\s*\]\s*$/
+          key = headers[i].replace(regex, '$1')
+          value = headers[i].replace(regex, '$2')
+          if (trim(key).length > 0) {
+            header_obj[key] = value
+          }
+        }
+
+        return header_obj
+      }
+
+      // strip whitespace from head/tail of PGN block
+      pgn = pgn.trim()
+
+      var newline_char =
+        typeof options === 'object' && typeof options.newline_char === 'string'
+          ? options.newline_char
+          : '\r?\n'
+
+      // RegExp to split header. Takes advantage of the fact that header and movetext
+      // will always have a blank line between them (ie, two newline_char's).
+      // With default newline_char, will equal: /^(\[((?:\r?\n)|.)*\])(?:\s*\r?\n){2}/
+      var header_regex = new RegExp(
+        '^(\\[((?:' +
+          mask(newline_char) +
+          ')|.)*\\])' +
+          '(?:\\s*' +
+          mask(newline_char) +
+          '){2}'
+      )
+
+      // If no header given, begin with moves.
+      var header_string = header_regex.test(pgn)
+        ? header_regex.exec(pgn)[1]
+        : ''
+
+      // Put the board in the starting position
+      reset()
+
+      /* parse PGN header */
+      var headers = parse_pgn_header(header_string, options)
+      var fen = ''
+
+      for (var key in headers) {
+        // check to see user is including fen (possibly with wrong tag case)
+        if (key.toLowerCase() === 'fen') {
+          fen = headers[key]
+        }
+        set_header([key, headers[key]])
+      }
+
+      /* sloppy parser should attempt to load a fen tag, even if it's
+       * the wrong case and doesn't include a corresponding [SetUp "1"] tag */
+      if (sloppy) {
+        if (fen) {
+          if (!load(fen, true)) {
+            return false
+          }
+        }
+      } else {
+        /* strict parser - load the starting position indicated by [Setup '1']
+         * and [FEN position] */
+        if (headers['SetUp'] === '1') {
+          if (!('FEN' in headers && load(headers['FEN'], true))) {
+            // second argument to load: don't clear the headers
+            return false
+          }
+        }
+      }
+
+      /* NB: the regexes below that delete move numbers, recursive
+       * annotations, and numeric annotation glyphs may also match
+       * text in comments. To prevent this, we transform comments
+       * by hex-encoding them in place and decoding them again after
+       * the other tokens have been deleted.
+       *
+       * While the spec states that PGN files should be ASCII encoded,
+       * we use {en,de}codeURIComponent here to support arbitrary UTF8
+       * as a convenience for modern users */
+
+      var to_hex = function (string) {
+        return Array.from(string)
+          .map(function (c) {
+            /* encodeURI doesn't transform most ASCII characters,
+             * so we handle these ourselves */
+            return c.charCodeAt(0) < 128
+              ? c.charCodeAt(0).toString(16)
+              : encodeURIComponent(c).replace(/\%/g, '').toLowerCase()
+          })
+          .join('')
+      }
+
+      var from_hex = function (string) {
+        return string.length == 0
+          ? ''
+          : decodeURIComponent('%' + string.match(/.{1,2}/g).join('%'))
+      }
+
+      var encode_comment = function (string) {
+        string = string.replace(new RegExp(mask(newline_char), 'g'), ' ')
+        return `{${to_hex(string.slice(1, string.length - 1))}}`
+      }
+
+      var decode_comment = function (string) {
+        if (string.startsWith('{') && string.endsWith('}')) {
+          return from_hex(string.slice(1, string.length - 1))
+        }
+      }
+
+      /* delete header to get the moves */
+      var ms = pgn
+        .replace(header_string, '')
+        .replace(
+          /* encode comments so they don't get deleted below */
+          new RegExp(`(\{[^}]*\})+?|;([^${mask(newline_char)}]*)`, 'g'),
+          function (match, bracket, semicolon) {
+            return bracket !== undefined
+              ? encode_comment(bracket)
+              : ' ' + encode_comment(`{${semicolon.slice(1)}}`)
+          }
+        )
+        .replace(new RegExp(mask(newline_char), 'g'), ' ')
+
+      /* delete recursive annotation variations */
+      var rav_regex = /(\([^\(\)]+\))+?/g
+      while (rav_regex.test(ms)) {
+        ms = ms.replace(rav_regex, '')
+      }
+
+      /* delete move numbers */
+      ms = ms.replace(/\d+\.(\.\.)?/g, '')
+
+      /* delete ... indicating black to move */
+      ms = ms.replace(/\.\.\./g, '')
+
+      /* delete numeric annotation glyphs */
+      ms = ms.replace(/\$\d+/g, '')
+
+      /* trim and get array of moves */
+      var moves = trim(ms).split(new RegExp(/\s+/))
+
+      /* delete empty entries */
+      moves = moves.join(',').replace(/,,+/g, ',').split(',')
+      var move = ''
+
+      var result = ''
+
+      for (var half_move = 0; half_move < moves.length; half_move++) {
+        var comment = decode_comment(moves[half_move])
+        if (comment !== undefined) {
+          comments[generate_fen()] = comment
+          continue
+        }
+
+        move = move_from_san(moves[half_move], sloppy)
+
+        /* invalid move */
+        if (move == null) {
+          /* was the move an end of game marker */
+          if (TERMINATION_MARKERS.indexOf(moves[half_move]) > -1) {
+            result = moves[half_move]
+          } else {
+            return false
+          }
+        } else {
+          /* reset the end of game marker if making a valid move */
+          result = ''
+          make_move(move)
+        }
+      }
+
+      /* Per section 8.2.6 of the PGN spec, the Result tag pair must match
+       * match the termination marker. Only do this when headers are present,
+       * but the result tag is missing
+       */
+      if (result && Object.keys(header).length && !header['Result']) {
+        set_header(['Result', result])
+      }
+
+      return true
+    },
+
+    header: function () {
+      return set_header(arguments)
+    },
+
+    turn: function () {
+      return turn
+    },
+
+    move: function (move, options) {
+      /* The move function can be called with in the following parameters:
+       *
+       * .move('Nxb7')      <- where 'move' is a case-sensitive SAN string
+       *
+       * .move({ from: 'h7', <- where the 'move' is a move object (additional
+       *         to :'h8',      fields are ignored)
+       *         promotion: 'q',
+       *      })
+       */
+
+      // allow the user to specify the sloppy move parser to work around over
+      // disambiguation bugs in Fritz and Chessbase
+      var sloppy =
+        typeof options !== 'undefined' && 'sloppy' in options
+          ? options.sloppy
+          : false
+
+      var move_obj = null
+
+      if (typeof move === 'string') {
+        move_obj = move_from_san(move, sloppy)
+      } else if (typeof move === 'object') {
+        var moves = generate_moves()
+
+        /* convert the pretty move object to an ugly move object */
+        for (var i = 0, len = moves.length; i < len; i++) {
+          if (
+            move.from === algebraic(moves[i].from) &&
+            move.to === algebraic(moves[i].to) &&
+            (!('promotion' in moves[i]) ||
+              move.promotion === moves[i].promotion)
+          ) {
+            move_obj = moves[i]
+            break
+          }
+        }
+      }
+
+      /* failed to find move */
+      if (!move_obj) {
+        return null
+      }
+
+      /* need to make a copy of move because we can't generate SAN after the
+       * move is made
+       */
+      var pretty_move = make_pretty(move_obj)
+
+      make_move(move_obj)
+
+      return pretty_move
+    },
+
+    undo: function () {
+      var move = undo_move()
+      return move ? make_pretty(move) : null
+    },
+
+    clear: function () {
+      return clear()
+    },
+
+    put: function (piece, square) {
+      return put(piece, square)
+    },
+
+    get: function (square) {
+      return get(square)
+    },
+
+    ascii() {
+      var s = '   +------------------------+\n'
+      for (var i = SQUARE_MAP.a8; i <= SQUARE_MAP.h1; i++) {
+        /* display the rank */
+        if (file(i) === 0) {
+          s += ' ' + '87654321'[rank(i)] + ' |'
+        }
+
+        /* empty piece */
+        if (board[i] == null) {
+          s += ' . '
+        } else {
+          var piece = board[i].type
+          var color = board[i].color
+          var symbol =
+            color === WHITE ? piece.toUpperCase() : piece.toLowerCase()
+          s += ' ' + symbol + ' '
+        }
+
+        if ((i + 1) & 0x88) {
+          s += '|\n'
+          i += 8
+        }
+      }
+      s += '   +------------------------+\n'
+      s += '     a  b  c  d  e  f  g  h'
+
+      return s
+    },
+
+    remove: function (square) {
+      return remove(square)
+    },
+
+    perft: function (depth) {
+      return perft(depth)
+    },
+
+    square_color: function (square) {
+      if (square in SQUARE_MAP) {
+        var sq_0x88 = SQUARE_MAP[square]
+        return (rank(sq_0x88) + file(sq_0x88)) % 2 === 0 ? 'light' : 'dark'
+      }
+
+      return null
+    },
+
+    history: function (options) {
+      var reversed_history = []
+      var move_history = []
+      var verbose =
+        typeof options !== 'undefined' &&
+        'verbose' in options &&
+        options.verbose
+
+      while (history.length > 0) {
+        reversed_history.push(undo_move())
+      }
+
+      while (reversed_history.length > 0) {
+        var move = reversed_history.pop()
+        if (verbose) {
+          move_history.push(make_pretty(move))
+        } else {
+          move_history.push(move_to_san(move, generate_moves({ legal: true })))
+        }
+        make_move(move)
+      }
+
+      return move_history
+    },
+
+    get_comment: function () {
+      return comments[generate_fen()]
+    },
+
+    set_comment: function (comment) {
+      comments[generate_fen()] = comment.replace('{', '[').replace('}', ']')
+    },
+
+    delete_comment: function () {
+      var comment = comments[generate_fen()]
+      delete comments[generate_fen()]
+      return comment
+    },
+
+    get_comments: function () {
+      prune_comments()
+      return Object.keys(comments).map(function (fen) {
+        return { fen: fen, comment: comments[fen] }
+      })
+    },
+
+    delete_comments: function () {
+      prune_comments()
+      return Object.keys(comments).map(function (fen) {
+        var comment = comments[fen]
+        delete comments[fen]
+        return { fen: fen, comment: comment }
+      })
+    },
+  }
+}
+
+if(typeof window !== "undefined") window.Chess = Chess;
+
+})();
+</script>
+<style>
+/* ═══════════════════════════════════════════════
+   ROOT & RESET
+═══════════════════════════════════════════════ */
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#0e1620;
+  --bg2:#131d2b;
+  --surface:#192535;
+  --surface2:#1e2d40;
+  --border:#26384f;
+  --border2:#2e4560;
+  --gold:#e8b84b;
+  --gold-dim:#c99a38;
+  --gold-glow:rgba(232,184,75,0.15);
+  --text:#dce6f0;
+  --text2:#8fa4bc;
+  --text3:#4d6880;
+  --green:#52c97e;
+  --red:#e05c5c;
+  --white-sq:#f0d9b5;
+  --black-sq:#b58863;
+  --r:12px;
+  --font-display:'Playfair Display',serif;
+  --font-mono:'JetBrains Mono',monospace;
+  --font-ui:'Mulish',sans-serif;
+}
+body{
+  background:var(--bg);
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(232,184,75,0.04) 0%, transparent 70%);
+  color:var(--text);
+  font-family:var(--font-ui);
+  min-height:100vh;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  overflow-x:hidden;
+}
+
+/* ═══════════════════════════════════════════════
+   SCREENS
+═══════════════════════════════════════════════ */
+.screen{
+  display:none;
+  width:100%;
+  max-width:440px;
+  padding:20px 18px 32px;
+  flex-direction:column;
+  align-items:center;
+  min-height:100vh;
+  animation:fadeIn 0.25s ease;
+}
+.screen.active{display:flex}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+
+/* ═══════════════════════════════════════════════
+   HOME
+═══════════════════════════════════════════════ */
+.home-eye{
+  font-size:56px;
+  margin:44px 0 0;
+  filter:drop-shadow(0 0 20px rgba(232,184,75,0.4));
+  animation:pulse 3s ease-in-out infinite;
+}
+@keyframes pulse{0%,100%{filter:drop-shadow(0 0 20px rgba(232,184,75,0.3))}50%{filter:drop-shadow(0 0 32px rgba(232,184,75,0.6))}}
+.home-title{
+  font-family:var(--font-display);
+  font-size:30px;
+  font-weight:900;
+  color:var(--gold);
+  text-align:center;
+  margin:12px 0 4px;
+  letter-spacing:0.5px;
+}
+.home-sub{
+  color:var(--text2);
+  font-size:13px;
+  margin-bottom:36px;
+  text-align:center;
+  letter-spacing:0.5px;
+}
+
+/* Mode grid */
+.mode-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%;margin-bottom:20px}
+.mode-card{
+  background:var(--surface);
+  border:1.5px solid var(--border);
+  border-radius:var(--r);
+  padding:14px 12px;
+  cursor:pointer;
+  transition:border-color 0.2s,background 0.2s,transform 0.15s;
+  text-align:center;
+  user-select:none;
+}
+.mode-card:hover{border-color:var(--border2);transform:translateY(-1px)}
+.mode-card.selected{
+  border-color:var(--gold);
+  background:linear-gradient(135deg,#1e2d40,#192535);
+  box-shadow:0 0 16px var(--gold-glow);
+}
+.mode-icon{font-size:26px;margin-bottom:7px}
+.mode-name{font-size:13px;font-weight:700;color:var(--gold)}
+.mode-desc{font-size:11px;color:var(--text2);margin-top:3px;line-height:1.4}
+
+/* ═══════════════════════════════════════════════
+   BUTTONS
+═══════════════════════════════════════════════ */
+.btn{
+  background:var(--gold);
+  color:#0e1620;
+  border:none;
+  border-radius:var(--r);
+  padding:14px 28px;
+  font-size:15px;
+  font-weight:700;
+  font-family:var(--font-ui);
+  cursor:pointer;
+  width:100%;
+  transition:background 0.2s,transform 0.12s;
+  letter-spacing:0.3px;
+}
+.btn:hover{background:var(--gold-dim)}
+.btn:active{transform:scale(0.98)}
+.btn-outline{
+  background:transparent;
+  border:1.5px solid var(--border2);
+  color:var(--text2);
+}
+.btn-outline:hover{border-color:var(--gold);color:var(--gold);background:var(--gold-glow)}
+.btn-sm{padding:10px 18px;font-size:13px;width:auto}
+.btn-row{display:flex;gap:10px;width:100%;margin-top:12px}
+
+/* ═══════════════════════════════════════════════
+   LOADING
+═══════════════════════════════════════════════ */
+.loading-center{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  flex:1;gap:20px;
+}
+.spinner{
+  width:44px;height:44px;
+  border:3px solid var(--border);
+  border-top-color:var(--gold);
+  border-radius:50%;
+  animation:spin 0.7s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-label{color:var(--text2);font-size:14px}
+.loading-sub{color:var(--text3);font-size:12px;font-family:var(--font-mono)}
+
+/* ═══════════════════════════════════════════════
+   DICTATION
+═══════════════════════════════════════════════ */
+.screen-header{
+  display:flex;align-items:center;justify-content:space-between;
+  width:100%;margin-bottom:12px;
+}
+.screen-label{
+  font-size:10px;font-family:var(--font-mono);
+  color:var(--text3);letter-spacing:2px;text-transform:uppercase;
+}
+.score-badge{
+  font-family:var(--font-mono);font-size:12px;
+  color:var(--text2);
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:20px;padding:4px 10px;
+}
+.score-badge span.c{color:var(--green)}
+.score-badge span.w{color:var(--red)}
+
+/* Depth dots */
+.depth-track{display:flex;gap:5px;width:100%;margin-bottom:14px;flex-wrap:wrap}
+.dot{
+  width:8px;height:8px;border-radius:50%;
+  background:var(--border);transition:background 0.3s;
+}
+.dot.done{background:var(--gold-dim)}
+.dot.current{background:var(--gold);box-shadow:0 0 6px var(--gold)}
+
+/* Notation */
+.notation-box{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:var(--r);
+  padding:18px;
+  width:100%;
+  min-height:140px;
+  max-height:200px;
+  overflow-y:auto;
+  margin-bottom:16px;
+  font-family:var(--font-mono);
+  font-size:15px;
+  line-height:2;
+  scroll-behavior:smooth;
+}
+.notation-box::-webkit-scrollbar{width:4px}
+.notation-box::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+.mv-num{color:var(--text3);font-size:12px;margin-right:3px}
+.mv-w{color:var(--text);margin-right:10px}
+.mv-b{color:#9bb8d4;margin-right:10px}
+.mv-w.active,.mv-b.active{color:var(--gold);font-weight:600}
+.mv-dot{color:var(--border2);font-size:10px}
+
+/* ═══════════════════════════════════════════════
+   QUESTION
+═══════════════════════════════════════════════ */
+.q-meta{
+  font-size:10px;font-family:var(--font-mono);
+  color:var(--text3);letter-spacing:2px;
+  margin-bottom:14px;text-align:center;
+}
+.q-card{
+  background:var(--surface);
+  border:1.5px solid var(--gold);
+  border-radius:16px;
+  padding:22px 18px;
+  width:100%;
+  margin-bottom:20px;
+  text-align:center;
+  box-shadow:0 0 24px var(--gold-glow);
+}
+.q-cat{
+  font-size:9px;font-family:var(--font-mono);
+  color:var(--gold);letter-spacing:3px;text-transform:uppercase;
+  margin-bottom:10px;
+}
+.q-text{font-size:18px;font-weight:600;line-height:1.5;color:var(--text)}
+
+/* Blind grid */
+.blind-grid{
+  display:grid;grid-template-columns:repeat(8,1fr);
+  gap:3px;width:100%;max-width:340px;margin-bottom:14px;
+}
+.bl-cell{
+  aspect-ratio:1;
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:4px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:9px;color:var(--text3);
+  cursor:pointer;font-family:var(--font-mono);
+  transition:all 0.12s;
+  user-select:none;
+}
+.bl-cell:hover{background:var(--surface2);border-color:var(--border2);color:var(--text2)}
+.bl-cell.sel{
+  background:var(--gold);color:#0e1620;
+  border-color:var(--gold);font-weight:700;
+  box-shadow:0 0 8px var(--gold-glow);
+}
+
+/* Number grid */
+.num-grid{
+  display:grid;grid-template-columns:repeat(5,1fr);
+  gap:6px;width:100%;max-width:300px;margin-bottom:14px;
+}
+.num-cell{
+  aspect-ratio:1;
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:8px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:18px;font-weight:700;font-family:var(--font-mono);
+  color:var(--text2);cursor:pointer;
+  transition:all 0.12s;user-select:none;
+}
+.num-cell:hover{background:var(--surface2);border-color:var(--border2);color:var(--text)}
+.num-cell.sel{
+  background:var(--gold);color:#0e1620;
+  border-color:var(--gold);
+  box-shadow:0 0 8px var(--gold-glow);
+}
+
+/* File (a-h) selector */
+.file-grid{
+  display:grid;grid-template-columns:repeat(8,1fr);
+  gap:6px;width:100%;max-width:340px;margin-bottom:14px;
+}
+.file-cell{
+  aspect-ratio:1;background:var(--surface);border:1px solid var(--border);
+  border-radius:8px;display:flex;align-items:center;justify-content:center;
+  font-size:17px;font-weight:700;font-family:var(--font-mono);
+  color:var(--text2);cursor:pointer;transition:all 0.12s;user-select:none;
+}
+.file-cell:hover{background:var(--surface2);border-color:var(--border2);color:var(--text)}
+.file-cell.sel{background:var(--gold);color:#0e1620;border-color:var(--gold);box-shadow:0 0 8px var(--gold-glow)}
+
+/* Rank (1-8) selector */
+.rank-grid{
+  display:grid;grid-template-columns:repeat(8,1fr);
+  gap:6px;width:100%;max-width:340px;margin-bottom:14px;
+}
+.rank-cell{
+  aspect-ratio:1;background:var(--surface);border:1px solid var(--border);
+  border-radius:8px;display:flex;align-items:center;justify-content:center;
+  font-size:17px;font-weight:700;font-family:var(--font-mono);
+  color:var(--text2);cursor:pointer;transition:all 0.12s;user-select:none;
+}
+.rank-cell:hover{background:var(--surface2);border-color:var(--border2);color:var(--text)}
+.rank-cell.sel{background:var(--gold);color:#0e1620;border-color:var(--gold);box-shadow:0 0 8px var(--gold-glow)}
+
+/* Piece buttons */
+.piece-grid{
+  display:grid;grid-template-columns:repeat(3,1fr);
+  gap:7px;width:100%;margin-bottom:14px;
+}
+.p-btn{
+  background:var(--surface);
+  border:1.5px solid var(--border);
+  border-radius:10px;
+  padding:10px 8px;
+  cursor:pointer;text-align:center;
+  transition:all 0.12s;user-select:none;
+}
+.p-btn:hover{border-color:var(--border2)}
+.p-btn.sel{border-color:var(--gold);background:var(--surface2);box-shadow:0 0 8px var(--gold-glow)}
+.p-glyph{font-size:22px;line-height:1}
+.p-label{font-size:9px;color:var(--text3);margin-top:4px;font-family:var(--font-mono)}
+
+/* Yes/No */
+.yn-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%}
+.yn-btn{
+  background:var(--surface);
+  border:2px solid var(--border);
+  border-radius:12px;
+  padding:18px 12px;
+  font-size:16px;font-weight:700;
+  cursor:pointer;text-align:center;
+  transition:all 0.15s;user-select:none;color:var(--text2);
+}
+.yn-btn.yes:hover,.yn-btn.yes.sel{border-color:var(--green);color:var(--green);background:rgba(82,201,126,0.07)}
+.yn-btn.no:hover,.yn-btn.no.sel{border-color:var(--red);color:var(--red);background:rgba(224,92,92,0.07)}
+
+/* ═══════════════════════════════════════════════
+   FEEDBACK
+═══════════════════════════════════════════════ */
+.fb-icon{font-size:64px;margin:36px 0 12px;animation:popIn 0.3s cubic-bezier(0.34,1.56,0.64,1)}
+@keyframes popIn{from{transform:scale(0.5);opacity:0}to{transform:scale(1);opacity:1}}
+.fb-title{font-family:var(--font-display);font-size:28px;font-weight:900;margin-bottom:16px}
+.fb-title.ok{color:var(--green)}
+.fb-title.bad{color:var(--red)}
+.fb-detail{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r);padding:16px 18px;
+  width:100%;font-size:14px;line-height:1.7;
+  text-align:center;margin-bottom:24px;color:var(--text2);
+}
+.fb-detail strong{color:var(--text)}
+.fb-score{margin-top:10px;font-size:12px;font-family:var(--font-mono)}
+
+/* ═══════════════════════════════════════════════
+   BOARD (REVEAL)
+═══════════════════════════════════════════════ */
+.board-outer{
+  width:100%;max-width:360px;margin:12px auto;
+}
+.board-coords-top{
+  display:grid;grid-template-columns:20px repeat(8,1fr);
+  margin-bottom:2px;
+}
+.board-row{display:grid;grid-template-columns:20px repeat(8,1fr)}
+.coord{
+  display:flex;align-items:center;justify-content:center;
+  font-size:10px;color:var(--text3);font-family:var(--font-mono);
+}
+.sq{
+  aspect-ratio:1;
+  display:flex;align-items:center;justify-content:center;
+  font-size:clamp(16px,5.5vw,30px);
+  position:relative;
+  cursor:default;
+}
+.sq.light{background:#f0d9b5}
+.sq.dark{background:#b58863}
+.sq.hl{
+  box-shadow:inset 0 0 0 3px rgba(232,184,75,0.8);
+}
+.piece-w{color:#fff;text-shadow:0 0 2px #000,0 0 4px #000,0 0 6px #000}
+.piece-b{color:#111;text-shadow:0 0 1px rgba(255,255,255,0.4)}
+
+.move-list-reveal{
+  font-family:var(--font-mono);font-size:12px;
+  color:var(--text2);text-align:center;
+  line-height:1.8;margin-top:8px;
+  width:100%;word-break:break-all;
+}
+
+/* ═══════════════════════════════════════════════
+   GAME OVER
+═══════════════════════════════════════════════ */
+.gameover-wrap{
+  display:flex;flex-direction:column;align-items:center;
+  justify-content:center;flex:1;text-align:center;
+  gap:8px;
+}
+.go-crown{font-size:64px;margin-bottom:8px}
+.go-title{font-family:var(--font-display);font-size:32px;font-weight:900;color:var(--gold)}
+.go-sub{color:var(--text2);font-size:14px;margin-bottom:24px}
+.go-stats{
+  display:grid;grid-template-columns:1fr 1fr;
+  gap:10px;width:100%;margin-bottom:28px;
+}
+.go-stat{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r);padding:14px;text-align:center;
+}
+.go-val{font-family:var(--font-display);font-size:36px;color:var(--gold)}
+.go-lbl{font-size:11px;color:var(--text3);margin-top:4px}
+
+/* ═══════════════════════════════════════════════
+   STATS
+═══════════════════════════════════════════════ */
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%;margin-bottom:20px}
+.stat-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r);padding:16px;text-align:center;
+}
+.stat-val{font-family:var(--font-display);font-size:34px;color:var(--gold)}
+.stat-lbl{font-size:11px;color:var(--text3);margin-top:4px}
+.cat-bar{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r);padding:14px 16px;width:100%;margin-bottom:10px;
+}
+.cat-bar-header{display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px}
+.cat-bar-track{
+  height:6px;background:var(--border);border-radius:3px;overflow:hidden;
+}
+.cat-bar-fill{height:100%;background:var(--gold);border-radius:3px;transition:width 0.4s}
+.cat-bar-footer{font-size:11px;color:var(--text3);margin-top:5px;font-family:var(--font-mono)}
+
+/* ═══════════════════════════════════════════════
+   FIXED UI
+═══════════════════════════════════════════════ */
+.tts-btn{
+  position:fixed;top:14px;right:14px;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:8px;padding:7px 11px;
+  cursor:pointer;font-size:16px;z-index:100;
+  transition:border-color 0.2s;
+}
+.tts-btn:hover{border-color:var(--gold)}
+.tts-btn.muted{opacity:0.5}
+
+.notif{
+  position:fixed;bottom:22px;left:50%;
+  transform:translateX(-50%) translateY(10px);
+  background:var(--surface2);border:1px solid var(--gold);
+  border-radius:20px;padding:9px 18px;
+  font-size:13px;opacity:0;pointer-events:none;
+  transition:opacity 0.25s,transform 0.25s;z-index:200;
+  white-space:nowrap;
+}
+.notif.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* divider */
+.divider{
+  width:100%;border:none;
+  border-top:1px solid var(--border);
+  margin:16px 0;
+}
+
+/* Page title (small screens) */
+.page-title{
+  font-family:var(--font-display);
+  font-size:22px;font-weight:700;
+  color:var(--gold);margin-bottom:20px;
+  align-self:flex-start;
+}
+
+/* ── Registration screen ── */
+.reg-name-input{
+  width:100%;background:var(--surface);
+  border:1.5px solid var(--border2);border-radius:var(--r);
+  padding:14px 16px;font-size:16px;color:var(--text);
+  font-family:var(--font-ui);outline:none;
+  transition:border-color 0.2s;
+}
+.reg-name-input:focus{border-color:var(--gold)}
+.reg-name-input::placeholder{color:var(--text3)}
+.participant-list{width:100%;display:flex;flex-direction:column;gap:7px;margin:12px 0}
+.p-item{
+  display:flex;align-items:center;justify-content:space-between;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:10px;padding:10px 14px;
+}
+.p-item-name{font-size:15px;font-weight:600}
+.p-item-num{font-size:11px;color:var(--text3);font-family:var(--font-mono)}
+.p-item-del{
+  background:none;border:none;color:var(--text3);font-size:18px;
+  cursor:pointer;padding:2px 6px;line-height:1;
+  transition:color 0.15s;
+}
+.p-item-del:hover{color:var(--red)}
+
+/* ── Participant brief (hand-off screen) ── */
+.brief-avatar{
+  font-size:64px;margin:36px 0 16px;
+  filter:drop-shadow(0 0 20px rgba(232,184,75,0.3));
+}
+.brief-name{
+  font-family:var(--font-display);font-size:32px;font-weight:900;
+  color:var(--gold);text-align:center;margin-bottom:6px;
+}
+.brief-sub{color:var(--text2);font-size:14px;margin-bottom:32px;text-align:center}
+.brief-progress{
+  font-family:var(--font-mono);font-size:11px;
+  color:var(--text3);margin-bottom:20px;text-align:center;letter-spacing:1px;
+}
+
+/* ── Participant score ── */
+.pscore-wrap{
+  display:flex;flex-direction:column;align-items:center;
+  justify-content:center;flex:1;text-align:center;gap:8px;
+}
+.pscore-icon{font-size:56px;margin-bottom:8px}
+.pscore-name{font-family:var(--font-display);font-size:26px;font-weight:900;color:var(--gold)}
+.pscore-acc{font-size:15px;color:var(--text2);margin-bottom:20px}
+.pscore-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%;margin-bottom:24px}
+.pscore-stat{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r);padding:14px;text-align:center;
+}
+.pscore-val{font-family:var(--font-display);font-size:32px;color:var(--gold)}
+.pscore-lbl{font-size:11px;color:var(--text3);margin-top:4px}
+
+/* ── Leaderboard ── */
+.lb-row{
+  display:flex;align-items:center;gap:12px;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r);padding:12px 14px;
+  width:100%;margin-bottom:8px;
+  transition:border-color 0.2s;
+}
+.lb-row.first{border-color:var(--gold);background:linear-gradient(135deg,#1e2d40,#192535)}
+.lb-rank{
+  font-family:var(--font-display);font-size:22px;font-weight:900;
+  color:var(--text3);min-width:28px;text-align:center;
+}
+.lb-row.first .lb-rank{color:var(--gold)}
+.lb-info{flex:1}
+.lb-name{font-size:15px;font-weight:700}
+.lb-meta{font-size:11px;color:var(--text3);font-family:var(--font-mono);margin-top:2px}
+.lb-pct{
+  font-family:var(--font-display);font-size:24px;font-weight:700;
+  color:var(--gold);
+}
+
+/* ── Question queue progress ── */
+.q-progress{
+  display:flex;gap:6px;margin-bottom:14px;
+}
+.q-pip{
+  flex:1;height:4px;border-radius:2px;
+  background:var(--border);transition:background 0.3s;
+}
+.q-pip.done{background:var(--green)}
+.q-pip.active{background:var(--gold)}
+</style>
+</head>
+<body>
+
+<!-- Fixed controls -->
+<button class="tts-btn" id="ttsBtn" title="Озвучення">🔊</button>
+<div class="notif" id="notif"></div>
+
+<!-- ═══ HOME ═══ -->
+<div class="screen active" id="sHome">
+  <div class="home-eye">♟</div>
+  <h1 class="home-title">Blindfold Vision</h1>
+  <p class="home-sub">Тренажер шахів наосліп · Lichess Masters</p>
+
+  <div class="mode-grid">
+    <div class="mode-card selected" data-mode="novice" onclick="pickMode(this)">
+      <div class="mode-icon">🌱</div>
+      <div class="mode-name">Новачок</div>
+      <div class="mode-desc">3–5 ходів<br>Де стоїть фігура</div>
+    </div>
+    <div class="mode-card" data-mode="amateur" onclick="pickMode(this)">
+      <div class="mode-icon">⚔️</div>
+      <div class="mode-name">Аматор</div>
+      <div class="mode-desc">6–8 ходів<br>+ загрози</div>
+    </div>
+    <div class="mode-card" data-mode="pro" onclick="pickMode(this)">
+      <div class="mode-icon">🎯</div>
+      <div class="mode-name">Профі</div>
+      <div class="mode-desc">9–12 ходів<br>+ динаміка</div>
+    </div>
+    <div class="mode-card" data-mode="infinite" onclick="pickMode(this)">
+      <div class="mode-icon">♾️</div>
+      <div class="mode-name">Нескінченна</div>
+      <div class="mode-desc">До першої<br>помилки</div>
+    </div>
+  </div>
+
+  <input class="reg-name-input" id="soloNameInput" type="text"
+    placeholder="Твоє ім'я (для статистики)…"
+    style="margin-bottom:12px"
+    onkeydown="if(event.key==='Enter')startGame()">
+  <div id="fbStatus" style="font-size:11px;font-family:var(--font-mono);color:var(--text3);margin-bottom:10px;text-align:center"></div>
+
+  <button class="btn" onclick="startGame()">Тренуватися (соло)</button>
+  <button class="btn btn-outline" style="margin-top:10px" onclick="goRegister()">👥 Груповий режим</button>
+  <button class="btn btn-outline" style="margin-top:10px" onclick="goStats()">📊 Статистика</button>
+</div>
+
+<!-- ═══ REGISTER ═══ -->
+<div class="screen" id="sRegister">
+  <div class="page-title">👥 Учасники</div>
+  <input class="reg-name-input" id="regInput" type="text"
+    placeholder="Введіть ім'я учасника…"
+    onkeydown="if(event.key==='Enter')addParticipant()">
+  <div class="btn-row" style="margin-top:10px">
+    <button class="btn btn-outline" onclick="addParticipant()">➕ Додати</button>
+  </div>
+  <div class="participant-list" id="participantList"></div>
+  <button class="btn" style="margin-top:auto" id="btnStartGroup" onclick="startGroupGame()" disabled>▶ Почати тренування</button>
+  <button class="btn btn-outline" style="margin-top:10px" onclick="goHome()">← Назад</button>
+</div>
+
+<!-- ═══ PARTICIPANT BRIEF ═══ -->
+<div class="screen" id="sParticipantBrief">
+  <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center">
+    <div class="brief-avatar">🎯</div>
+    <div class="brief-name" id="briefName">—</div>
+    <div class="brief-sub">Твій хід! Передай пристрій гравцю.</div>
+    <div class="brief-progress" id="briefProgress">ГРАВЕЦЬ 1 З 4</div>
+  </div>
+  <button class="btn" onclick="launchParticipant()">Я готовий ▶</button>
+</div>
+
+<!-- ═══ PARTICIPANT SCORE ═══ -->
+<div class="screen" id="sParticipantScore">
+  <div class="pscore-wrap">
+    <div class="pscore-icon" id="pscoreIcon">🏆</div>
+    <div class="pscore-name" id="pscoreName">—</div>
+    <div class="pscore-acc" id="pscoreAcc">Точність: 0%</div>
+    <div class="pscore-grid" id="pscoreGrid"></div>
+  </div>
+  <button class="btn" id="btnNextParticipant" onclick="nextParticipant()">Наступний учасник ▶</button>
+  <button class="btn btn-outline" style="margin-top:10px;display:none" id="btnToLeaderboard" onclick="showLeaderboard()">🏆 Таблиця результатів</button>
+</div>
+
+<!-- ═══ LEADERBOARD ═══ -->
+<div class="screen" id="sLeaderboard">
+  <div class="page-title">🏆 Результати</div>
+  <div id="leaderboardList" style="width:100%"></div>
+  <button class="btn" style="margin-top:20px" onclick="goHome()">Нова сесія</button>
+</div>
+
+<!-- ═══ LOADING ═══ -->
+<div class="screen" id="sLoading">
+  <div class="loading-center">
+    <div style="font-size:42px">♜</div>
+    <div class="spinner"></div>
+    <div class="loading-label">Завантаження лінії з Lichess Masters…</div>
+    <div class="loading-sub" id="loadStatus">ініціалізація…</div>
+  </div>
+</div>
+
+<!-- ═══ DICTATION ═══ -->
+<div class="screen" id="sDictation">
+  <div class="screen-header">
+    <div class="screen-label" id="dictLabel">ХІД 0</div>
+    <div class="score-badge">✅ <span class="c" id="sc">0</span> / ❌ <span class="w" id="sw">0</span></div>
+  </div>
+  <div class="depth-track" id="depthTrack"></div>
+  <div class="notation-box" id="notationBox"></div>
+  <div class="btn-row">
+    <button class="btn btn-outline btn-sm" onclick="doRepeat()">🔁 Повторити</button>
+    <button class="btn btn-sm" id="btnNext" onclick="doNext()">Далі ▶</button>
+  </div>
+  <button class="btn btn-outline" style="margin-top:10px" onclick="doAskNow()">❓ Поставити питання</button>
+</div>
+
+<!-- ═══ QUESTION ═══ -->
+<div class="screen" id="sQuestion">
+  <div class="q-meta" id="qMeta">ПІСЛЯ 0 ХОДІВ</div>
+  <div class="q-progress" id="qProgress"></div>
+  <div class="q-card">
+    <div class="q-cat" id="qCat">КООРДИНАТА</div>
+    <div class="q-text" id="qText">…</div>
+  </div>
+
+  <div id="iSquare">
+    <div class="blind-grid" id="blindGrid"></div>
+  </div>
+  <div id="iPiece" style="display:none">
+    <div class="piece-grid" id="pieceGrid"></div>
+  </div>
+  <div id="iYN" style="display:none">
+    <div class="yn-row">
+      <div class="yn-btn yes" id="ynYes" onclick="pickYN('yes')">✅ Так</div>
+      <div class="yn-btn no" id="ynNo" onclick="pickYN('no')">❌ Ні</div>
+    </div>
+  </div>
+  <div id="iNum" style="display:none">
+    <div class="num-grid" id="numGrid"></div>
+  </div>
+  <div id="iFile" style="display:none">
+    <div class="file-grid" id="fileGrid"></div>
+  </div>
+  <div id="iRank" style="display:none">
+    <div class="rank-grid" id="rankGrid"></div>
+  </div>
+
+  <button class="btn" style="margin-top:14px" onclick="submitAnswer()">Відповісти</button>
+</div>
+
+<!-- ═══ FEEDBACK ═══ -->
+<div class="screen" id="sFeedback">
+  <div class="fb-icon" id="fbIcon">🎯</div>
+  <div class="fb-title ok" id="fbTitle">Правильно!</div>
+  <div class="fb-detail" id="fbDetail">…</div>
+  <div class="btn-row">
+    <button class="btn btn-outline" onclick="doReveal()">🔍 Позиція</button>
+    <button class="btn" id="fbContinueBtn" onclick="doContinue()">Далі ▶</button>
+  </div>
+</div>
+
+<!-- ═══ REVEAL ═══ -->
+<div class="screen" id="sReveal">
+  <div class="page-title">Позиція на дошці</div>
+  <div style="font-size:12px;color:var(--text3);margin-bottom:10px;font-family:var(--font-mono)" id="revLabel"></div>
+  <div id="boardContainer"></div>
+  <div class="move-list-reveal" id="revMoves"></div>
+  <button class="btn" style="margin-top:20px" onclick="doAfterReveal()">Продовжити ▶</button>
+</div>
+
+<!-- ═══ GAME OVER ═══ -->
+<div class="screen" id="sGameOver">
+  <div class="gameover-wrap">
+    <div class="go-crown" id="goCrown">🏆</div>
+    <h2 class="go-title" id="goTitle">Тренування завершено</h2>
+    <p class="go-sub" id="goSub">Хороша робота!</p>
+    <div class="go-stats" id="goStats"></div>
+    <button class="btn" onclick="goHome()">Нова партія</button>
+    <button class="btn btn-outline" style="margin-top:10px" onclick="goStats()">📊 Статистика</button>
+  </div>
+</div>
+
+<!-- ═══ STATS ═══ -->
+<div class="screen" id="sStats">
+  <div class="page-title">📊 Статистика</div>
+  <div class="stats-grid" id="statsGrid"></div>
+  <div id="catStats"></div>
+  <div id="allPlayersSection" style="display:none;width:100%;margin-top:16px">
+    <div style="font-size:11px;font-family:var(--font-mono);color:var(--text3);
+      letter-spacing:2px;text-transform:uppercase;margin-bottom:10px">
+      🌐 Всі гравці · Firebase
+    </div>
+    <div id="allPlayersList"></div>
+  </div>
+  <button class="btn btn-outline" style="margin-top:auto" onclick="goHome()">← На головну</button>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     JAVASCRIPT
+══════════════════════════════════════════════════════════ -->
+<script>
+// ╔══════════════════════════════════════════════╗
+// ║  CONSTANTS                                   ║
+// ╚══════════════════════════════════════════════╝
+const FILES = ['a','b','c','d','e','f','g','h'];
+const RANKS = ['8','7','6','5','4','3','2','1'];
+
+const UNICODE = {
+  wk:'♔',wq:'♕',wr:'♖',wb:'♗',wn:'♘',wp:'♙',
+  bk:'♚',bq:'♛',br:'♜',bb:'♝',bn:'♞',bp:'♟'
+};
+
+const PIECE_UA = {k:'Король',q:'Ферзь',r:'Тура',b:'Слон',n:'Кінь',p:'Пішак'};
+const FILE_UA  = {a:'а',b:'бе',c:'це',d:'де',e:'е',f:'еф',g:'же',h:'аш'};
+const RANK_UA  = {'1':'один','2':'два','3':'три','4':'чотири','5':"п'ять",'6':'шість','7':'сім','8':'вісім'};
+
+// feminine pieces (for gender agreement)
+const FEM = {r:true};
+
+const MODE_CFG = {
+  novice:  {min:3, max:5,  cats:['coord']},
+  amateur: {min:5, max:8,  cats:['coord','threat']},
+  pro:     {min:8, max:12, cats:['coord','threat','dynamic']},
+  infinite:{min:3, max:99, cats:['coord','threat','dynamic']},
+};
+
+const CAT_UA = {coord:'КООРДИНАТА',threat:'ЗАГРОЗА',dynamic:'ДИНАМІКА'};
+
+// Weighted categories
+const CAT_W = {coord:3,threat:2,dynamic:1};
+
+// ╔══════════════════════════════════════════════╗
+// ║  STATE                                       ║
+// ╚══════════════════════════════════════════════╝
+let S = {
+  mode:'novice',
+  isGroup:false,
+  participants:[],     // [{name, sess:{c,w,depth}}]
+  curPIdx:0,
+  chess:null,
+  line:[],
+  idx:0,
+  questionQueue:[],    // array of 3 Question objects
+  questionQIdx:0,      // index in queue
+  question:null,
+  answer:null,
+  sess:{c:0,w:0,depth:0},
+  afterQueue:'continue', // 'continue' | 'gameover'
+};
+
+// ╔══════════════════════════════════════════════╗
+// ║  TTS                                         ║
+// ╚══════════════════════════════════════════════╝
+let TTS_ON = true;
+
+function speak(txt){
+  if(!TTS_ON) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(txt);
+  u.lang='uk-UA'; u.rate=0.9;
+  speechSynthesis.speak(u);
+}
+
+function sqSpeech(sq){return `${FILE_UA[sq[0]]||sq[0]}-${RANK_UA[sq[1]]||sq[1]}`}
+
+function sanSpeech(san){
+  if(san==='O-O-O') return 'довга рокіровка';
+  if(san==='O-O')   return 'коротка рокіровка';
+  const P={K:'Король',Q:'Ферзь',R:'Тура',B:'Слон',N:'Кінь'};
+  let s=san.replace(/[+#?!]/g,'');
+  const cap=s.includes('x');
+  s=s.replace('x','');
+  let promo='';
+  if(s.includes('=')){const i=s.indexOf('=');promo=' з перетворенням на '+(P[s[i+1]]||'');s=s.slice(0,i)}
+  const dest=s.slice(-2);
+  const sq=sqSpeech(dest);
+  let piece='';
+  if('KQRBN'.includes(s[0])){piece=P[s[0]];s=s.slice(1)}
+  if(piece) return `${piece} ${cap?'бере на':'на'} ${sq}${promo}`;
+  return `${cap?'пішак бере на':'пішак на'} ${sq}${promo}`;
+}
+
+document.getElementById('ttsBtn').onclick=()=>{
+  TTS_ON=!TTS_ON;
+  document.getElementById('ttsBtn').className='tts-btn'+(TTS_ON?'':' muted');
+  document.getElementById('ttsBtn').textContent=TTS_ON?'🔊':'🔇';
+  notif(TTS_ON?'Озвучення увімкнено':'Озвучення вимкнено');
+};
+
+// ╔══════════════════════════════════════════════╗
+// ║  SCREEN                                      ║
+// ╚══════════════════════════════════════════════╝
+function show(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function notif(txt){
+  const el=document.getElementById('notif');
+  el.textContent=txt;el.classList.add('show');
+  clearTimeout(el._t);
+  el._t=setTimeout(()=>el.classList.remove('show'),2600);
+}
+
+// ╔══════════════════════════════════════════════╗
+// ║  HOME                                        ║
+// ╚══════════════════════════════════════════════╝
+function pickMode(el){
+  document.querySelectorAll('.mode-card').forEach(c=>c.classList.remove('selected'));
+  el.classList.add('selected');
+  S.mode=el.dataset.mode;
+}
+
+function goHome(){show('sHome')}
+function goStats(){renderStats();show('sStats')}
+function goRegister(){
+  S.participants=[];
+  renderParticipantList();
+  show('sRegister');
+}
+
+// ── Participant registration ──
+function addParticipant(){
+  const inp=document.getElementById('regInput');
+  const name=inp.value.trim();
+  if(!name){notif('Введіть ім\'я');return}
+  S.participants.push({name,sess:{c:0,w:0,depth:0}});
+  inp.value='';
+  renderParticipantList();
+  inp.focus();
+}
+
+function removeParticipant(i){
+  S.participants.splice(i,1);
+  renderParticipantList();
+}
+
+function renderParticipantList(){
+  const list=document.getElementById('participantList');
+  list.innerHTML='';
+  S.participants.forEach((p,i)=>{
+    const row=document.createElement('div');
+    row.className='p-item';
+    row.innerHTML=`
+      <span class="p-item-num">${i+1}.</span>
+      <span class="p-item-name">${p.name}</span>
+      <button class="p-item-del" onclick="removeParticipant(${i})">✕</button>`;
+    list.appendChild(row);
+  });
+  document.getElementById('btnStartGroup').disabled=S.participants.length<1;
+}
+
+async function startGroupGame(){
+  if(!S.participants.length){notif('Додайте хоча б одного учасника');return}
+  S.isGroup=true;
+  S.curPIdx=0;
+  // Reset all sessions
+  S.participants.forEach(p=>p.sess={c:0,w:0,depth:0});
+  // Fetch line once for all
+  show('sLoading');
+  try{
+    S.line=await fetchLine();
+  }catch(e){
+    console.warn('Lichess fetch failed, using fallback:',e);
+    notif('Офлайн-режим — вбудована партія');
+    S.line=fallbackLine();
+  }
+  // Show brief for first participant
+  showParticipantBrief();
+}
+
+function showParticipantBrief(){
+  const p=S.participants[S.curPIdx];
+  document.getElementById('briefName').textContent=p.name;
+  document.getElementById('briefProgress').textContent=
+    `ГРАВЕЦЬ ${S.curPIdx+1} З ${S.participants.length}`;
+  show('sParticipantBrief');
+}
+
+function launchParticipant(){
+  // Reset chess + session for this participant
+  try{ S.chess=new Chess(); }catch(e){ notif('Помилка ініціалізації'); return; }
+  S.idx=0;
+  S.sess=S.participants[S.curPIdx].sess;
+  S.sess.c=0; S.sess.w=0; S.sess.depth=0;
+  buildDepthTrack();
+  renderNotation();
+  updateScoreBadge();
+  show('sDictation');
+  setTimeout(()=>stepForward(true),350);
+}
+
+function showParticipantScore(){
+  const p=S.participants[S.curPIdx];
+  // save final session
+  p.sess=S.sess;
+  persistSession(p.name, p.sess, S.mode);
+  const {c,w,depth}=p.sess;
+  const tot=c+w;
+  const pct=tot>0?Math.round(c/tot*100):0;
+
+  document.getElementById('pscoreIcon').textContent=pct>=80?'🏆':pct>=60?'🎯':'📚';
+  document.getElementById('pscoreName').textContent=p.name;
+  document.getElementById('pscoreAcc').textContent=`Точність: ${pct}%`;
+  document.getElementById('pscoreGrid').innerHTML=`
+    <div class="pscore-stat"><div class="pscore-val">${pct}%</div><div class="pscore-lbl">Точність</div></div>
+    <div class="pscore-stat"><div class="pscore-val">${depth}</div><div class="pscore-lbl">Глибина</div></div>
+    <div class="pscore-stat"><div class="pscore-val">${c}</div><div class="pscore-lbl">Правильних</div></div>
+    <div class="pscore-stat"><div class="pscore-val">${w}</div><div class="pscore-lbl">Хибних</div></div>
+  `;
+
+  const isLast=S.curPIdx>=S.participants.length-1;
+  document.getElementById('btnNextParticipant').style.display=isLast?'none':'block';
+  document.getElementById('btnToLeaderboard').style.display=isLast?'block':'none';
+
+  speak(`${p.name}. Точність ${pct} відсотків.`);
+  show('sParticipantScore');
+}
+
+function nextParticipant(){
+  S.curPIdx++;
+  showParticipantBrief();
+}
+
+function showLeaderboard(){
+  const sorted=[...S.participants].sort((a,b)=>{
+    const pa=a.sess.c+a.sess.w>0?a.sess.c/(a.sess.c+a.sess.w):0;
+    const pb=b.sess.c+b.sess.w>0?b.sess.c/(b.sess.c+b.sess.w):0;
+    return pb-pa;
+  });
+  const list=document.getElementById('leaderboardList');
+  list.innerHTML='';
+  sorted.forEach((p,i)=>{
+    const tot=p.sess.c+p.sess.w;
+    const pct=tot>0?Math.round(p.sess.c/tot*100):0;
+    const row=document.createElement('div');
+    row.className='lb-row'+(i===0?' first':'');
+    row.innerHTML=`
+      <div class="lb-rank">${i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1}</div>
+      <div class="lb-info">
+        <div class="lb-name">${p.name}</div>
+        <div class="lb-meta">✅ ${p.sess.c} / ❌ ${p.sess.w} · глибина: ${p.sess.depth}</div>
+      </div>
+      <div class="lb-pct">${pct}%</div>`;
+    list.appendChild(row);
+  });
+  show('sLeaderboard');
+}
+
+async function startGame(){
+  S.isGroup=false;
+  S.participants=[];
+  S.sess={c:0,w:0,depth:0};
+  updateScoreBadge();
+  show('sLoading');
+  try{
+    S.line=await fetchLine();
+  }catch(e){
+    console.warn('Lichess fetch failed, using fallback:',e);
+    notif('Офлайн-режим — вбудована партія');
+    S.line=fallbackLine();
+  }
+  try{ S.chess=new Chess(); }catch(e){ console.error('Chess constructor failed:',e); notif('Помилка ініціалізації шахової бібліотеки'); return; }
+  S.idx=0;
+  buildDepthTrack();
+  renderNotation();
+  show('sDictation');
+  setTimeout(()=>stepForward(true),350);
+}
+
+// ╔══════════════════════════════════════════════╗
+// ║  LICHESS API                                 ║
+// ╚══════════════════════════════════════════════╝
+async function fetchLine(){
+  const cfg=MODE_CFG[S.mode];
+  const target=S.mode==='infinite'?30:cfg.max*2; // cap infinite mode to avoid 198 API calls
+  const chess=new Chess();
+  const line=[];
+  const uci=[];
+
+  for(let i=0;i<target;i++){
+    const play=uci.join(',');
+    const url=`https://explorer.lichess.ovh/masters?play=${play}&topGames=0&recentGames=0`;
+    setLoadStatus(`хід ${Math.floor(i/2)+1} / ${cfg.max}…`);
+    const resp=await fetch(url,{signal:AbortSignal.timeout(6000)});
+    if(!resp.ok) throw new Error('HTTP '+resp.status);
+    const data=await resp.json();
+    if(!data.moves||data.moves.length===0) break;
+
+    // weighted random pick from top 3
+    const pool=data.moves.slice(0,Math.min(3,data.moves.length));
+    const ws=pool.map(m=>m.white+m.draws+m.black);
+    const tot=ws.reduce((a,b)=>a+b,0);
+    let r=Math.random()*tot, chosen=pool[0];
+    for(let j=0;j<pool.length;j++){r-=ws[j];if(r<=0){chosen=pool[j];break}}
+
+    const result=chess.move(chosen.san);
+    if(!result) break;
+    line.push(chosen.san);
+    uci.push(chosen.uci);
+  }
+  if(line.length<cfg.min) throw new Error('Line too short: '+line.length);
+  return line;
+}
+
+function setLoadStatus(txt){document.getElementById('loadStatus').textContent=txt}
+
+function fallbackLine(){
+  const lines=[
+    ['e4','e5','Nf3','Nc6','Bb5','a6','Ba4','Nf6','O-O','Be7','Re1','b5','Bb3','d6'],
+    ['e4','c5','Nf3','d6','d4','cxd4','Nxd4','Nf6','Nc3','a6','Bg5','e6','f4','Be7'],
+    ['d4','d5','c4','e6','Nc3','Nf6','Bg5','Be7','e3','O-O','Nf3','Nbd7','Rc1','c6'],
+    ['d4','Nf6','c4','g6','Nc3','Bg7','e4','d6','Nf3','O-O','Be2','e5','O-O','Nc6'],
+    ['e4','e6','d4','d5','Nc3','Bb4','e5','c5','a3','Bxc3+','bxc3','Ne7','Qg4','O-O'],
+    ['c4','e5','Nc3','Nf6','Nf3','Nc6','g3','d5','cxd5','Nxd5','Bg2','Nb6','O-O','Be7'],
+  ];
+  return lines[Math.floor(Math.random()*lines.length)];
+}
+
+// ╔══════════════════════════════════════════════╗
+// ║  DICTATION                                   ║
+// ╚══════════════════════════════════════════════╝
+function buildDepthTrack(){
+  const t=document.getElementById('depthTrack');
+  t.innerHTML='';
+  const n=Math.min(S.line.length,24);
+  for(let i=0;i<n;i++){
+    const d=document.createElement('div');
+    d.className='dot';d.id='dot'+i;
+    t.appendChild(d);
+  }
+}
+
+function updateDepthTrack(){
+  const n=Math.min(S.line.length,24);
+  for(let i=0;i<n;i++){
+    const d=document.getElementById('dot'+i);
+    if(!d) continue;
+    d.className='dot'+(i<S.idx-1?' done':i===S.idx-1?' current':'');
+  }
+}
+
+function renderNotation(){
+  const box=document.getElementById('notationBox');
+  let html='';
+  for(let i=0;i<S.line.length;i++){
+    const san=S.line[i];
+    if(i%2===0) html+=`<span class="mv-num">${Math.floor(i/2)+1}.</span>`;
+    if(i<S.idx){
+      const cls=(i%2===0?'mv-w':'mv-b')+(i===S.idx-1?' active':'');
+      html+=`<span class="${cls}" id="mv${i}">${san} </span>`;
+    }else{
+      html+=`<span class="mv-dot">· </span>`;
+    }
+  }
+  box.innerHTML=html;
+  const cur=document.getElementById('mv'+(S.idx-1));
+  if(cur) cur.scrollIntoView({block:'nearest',behavior:'smooth'});
+}
+
+function updateScoreBadge(){
+  document.getElementById('sc').textContent=S.sess.c;
+  document.getElementById('sw').textContent=S.sess.w;
+}
+
+function stepForward(silent=false){
+  if(S.idx>=S.line.length){doAskNow();return}
+  const cfg=MODE_CFG[S.mode];
+  const san=S.line[S.idx];
+  S.chess.move(san);
+  S.idx++;
+  updateDepthTrack();
+  renderNotation();
+  const full=Math.ceil(S.idx/2);
+  document.getElementById('dictLabel').textContent=`ХІД ${full}`;
+  if(!silent) speak(sanSpeech(san));
+
+  // Auto-question trigger
+  const shouldAsk=S.idx>=S.line.length||
+    (S.idx>=cfg.min*2 && S.mode==='infinite')||
+    (S.idx>=cfg.max*2 && S.idx>=cfg.min*2);
+  if(shouldAsk){doAskNow()}
+}
+
+function doNext(){stepForward(false)}
+function doRepeat(){
+  if(S.idx>0) speak(sanSpeech(S.line[S.idx-1]));
+}
+const Q_PER_ROUND=3;
+
+function generateQuestionQueue(n){
+  const cfg=MODE_CFG[S.mode];
+  const cats=cfg.cats;
+  const fns={coord:qCoord,threat:qThreat,dynamic:qDynamic};
+  const queue=[];
+  const usedTexts=new Set();
+  const usedCats=[];
+  let attempts=0;
+  while(queue.length<n && attempts<40){
+    attempts++;
+    // pick category — prefer variety
+    const remaining=cats.filter(c=>usedCats.filter(x=>x===c).length<Math.ceil(n/cats.length));
+    const pool=remaining.length?remaining:cats;
+    // weighted pick
+    const tot=pool.reduce((a,c)=>a+CAT_W[c],0);
+    let r=Math.random()*tot, cat=pool[0];
+    for(const c of pool){r-=CAT_W[c];if(r<=0){cat=c;break}}
+    try{
+      const q=(fns[cat]||qCoord)();
+      if(!q||usedTexts.has(q.text)) continue;
+      usedTexts.add(q.text);
+      usedCats.push(cat);
+      queue.push(q);
+    }catch(e){}
+  }
+  return queue;
+}
+
+function doAskNow(){
+  const queue=generateQuestionQueue(Q_PER_ROUND);
+  if(!queue.length){
+    if(S.isGroup) showParticipantScore();
+    else showGameOver();
+    return;
+  }
+  S.questionQueue=queue;
+  S.questionQIdx=0;
+  S.afterQueue=S.idx>=S.line.length?'gameover':'continue';
+  showCurrentQuestion();
+}
+
+function showCurrentQuestion(){
+  const q=S.questionQueue[S.questionQIdx];
+  S.question=q;
+  S.answer=null;
+  renderQuestion(q);
+  // render progress pips
+  const prog=document.getElementById('qProgress');
+  prog.innerHTML='';
+  S.questionQueue.forEach((_,i)=>{
+    const pip=document.createElement('div');
+    pip.className='q-pip'+(i<S.questionQIdx?' done':i===S.questionQIdx?' active':'');
+    prog.appendChild(pip);
+  });
+  const full=Math.floor(S.idx/2);
+  document.getElementById('qMeta').textContent=
+    `ПІСЛЯ ${S.idx} НАПІВХОДІВ · ПИТАННЯ ${S.questionQIdx+1}/${S.questionQueue.length}`;
+  show('sQuestion');
+  speak(q.text);
+}
+
+// ╔══════════════════════════════════════════════╗
+// ║  QUESTION GENERATION                         ║
+// ╚══════════════════════════════════════════════╝
+// ╔══════════════════════════════════════════════╗
+// ║  QUESTION ENGINE                             ║
+// ╚══════════════════════════════════════════════╝
+
+// Starting squares — pieces here are trivially "obviously" placed
+const START_SQ={
+  wp:['a2','b2','c2','d2','e2','f2','g2','h2'],
+  wn:['b1','g1'], wb:['c1','f1'], wr:['a1','h1'],
+  wq:['d1'],      wk:['e1'],
+  bp:['a7','b7','c7','d7','e7','f7','g7','h7'],
+  bn:['b8','g8'], bb:['c8','f8'], br:['a8','h8'],
+  bq:['d8'],      bk:['e8'],
+};
+
+function isOnStart(p){
+  return (START_SQ[p.color+p.type]||[]).includes(p.sq);
+}
+
+// "Interesting" = has moved from starting square
+function movedPieces(){return pieces().filter(p=>!isOnStart(p));}
+function interestingPieces(){
+  // pieces that moved OR pieces where their start is occupied by a DIFFERENT piece
+  const mp=movedPieces();
+  return mp.filter(p=>p.type!=='k'); // don't ask about king unless moved
+}
+
+// Bishop label: always specify square color to avoid ambiguity
+function bishopLabel(p){
+  const light=sqIsLight(p.sq);
+  const col=p.color==='w'?'білий':'чорний';
+  return `${col} ${light?'білопільний':'чорнопільний'} слон`;
+}
+function bishopLabelAcc(p){
+  const light=sqIsLight(p.sq);
+  const col=p.color==='w'?'білого':'чорного';
+  return `${col} ${light?'білопільного':'чорнопільного'} слона`;
+}
+
+// Rook label: if both rooks still alive, specify queenside/kingside
+function rookLabel(p){
+  const rooks=pieces().filter(r=>r.type==='r'&&r.color===p.color);
+  const col=p.color==='w'?'біла':'чорна';
+  if(rooks.length<=1) return `${col} тура`;
+  return 'abcd'.includes(p.sq[0])
+    ?`${col} ферзева тура`
+    :`${col} королева тура`;
+}
+function rookLabelAcc(p){
+  const rooks=pieces().filter(r=>r.type==='r'&&r.color===p.color);
+  const col=p.color==='w'?'білу':'чорну';
+  if(rooks.length<=1) return `${col} туру`;
+  return 'abcd'.includes(p.sq[0])
+    ?`${col} ферзеву туру`
+    :`${col} королеву туру`;
+}
+
+// Knight label: specify queenside/kingside when both alive
+function knightLabel(p){
+  const kts=pieces().filter(k=>k.type==='n'&&k.color===p.color);
+  const col=p.color==='w'?'білий':'чорний';
+  if(kts.length<=1) return `${col} кінь`;
+  return 'abcd'.includes(p.sq[0])
+    ?`${col} ферзевий кінь`
+    :`${col} королівський кінь`;
+}
+function knightLabelAcc(p){
+  const kts=pieces().filter(k=>k.type==='n'&&k.color===p.color);
+  const col=p.color==='w'?'білого':'чорного';
+  if(kts.length<=1) return `${col} коня`;
+  return 'abcd'.includes(p.sq[0])
+    ?`${col} ферзевого коня`
+    :`${col} королівського коня`;
+}
+
+// Precise label for any piece
+function preciseLabel(p){
+  if(p.type==='b') return bishopLabel(p);
+  if(p.type==='r') return rookLabel(p);
+  if(p.type==='n') return knightLabel(p);
+  return pname(p.type,p.color);
+}
+function preciseLabelAcc(p){
+  if(p.type==='b') return bishopLabelAcc(p);
+  if(p.type==='r') return rookLabelAcc(p);
+  if(p.type==='n') return knightLabelAcc(p);
+  return pnameAcc(p.type,p.color);
+}
+
+// ── helper: get all pieces from board ──
+function pieces(){
+  const board=S.chess.board();
+  const arr=[];
+  for(let r=0;r<8;r++) for(let c=0;c<8;c++){
+    const p=board[r][c];
+    if(p) arr.push({...p,sq:FILES[c]+RANKS[r]});
+  }
+  return arr;
+}
+
+// ── piece display name (Ukrainian) ──
+function pname(type,color){
+  const n=PIECE_UA[type]||type;
+  const fem=FEM[type];
+  const a=color==='w'?(fem?'Біла':'Білий'):(fem?'Чорна':'Чорний');
+  return `${a} ${n.toLowerCase()}`;
+}
+function pnameAcc(type,color){
+  return pname(type,color).toLowerCase();
+}
+// genitive: "атаку на пішака", "захист тури"
+function pnameGen(type,color){
+  const gen={k:'короля',q:'ферзя',r:'тури',b:'слона',n:'коня',p:'пішака'};
+  const fem=FEM[type];
+  const a=color==='w'?(fem?'білої':'білого'):(fem?'чорної':'чорного');
+  return `${a} ${gen[type]||type}`;
+}
+
+// ── attack helpers ──
+// Returns true if `color` has ANY piece that attacks `sq`
+function attackedBy(sq,color){
+  const fen=S.chess.fen();
+  const parts=fen.split(' ');
+  parts[1]=color;
+  parts[3]='-'; // clear en passant to avoid illegal state
+  try{
+    const tmp=new Chess(parts.join(' '));
+    return tmp.moves({verbose:true}).some(m=>m.to===sq);
+  }catch(e){return false;}
+}
+
+// Count how many of `color`'s pieces attack `sq`
+function attackCount(sq,color){
+  const fen=S.chess.fen();
+  const parts=fen.split(' ');
+  parts[1]=color;
+  parts[3]='-';
+  try{
+    const tmp=new Chess(parts.join(' '));
+    // Each legal move to sq might be from a different piece; count unique from-squares
+    const froms=new Set(
+      tmp.moves({verbose:true}).filter(m=>m.to===sq).map(m=>m.from)
+    );
+    return froms.size;
+  }catch(e){return 0;}
+}
+
+// ── structure helpers ──
+// Is file `f` (0-7 index) open — no pawns of either color?
+function fileOpen(fIdx){
+  const board=S.chess.board();
+  return ![0,1,2,3,4,5,6,7].some(r=>{const p=board[r][fIdx];return p&&p.type==='p';});
+}
+// Does `color` have doubled pawns (two+ pawns on same file)?
+function hasDoubledPawns(color){
+  const ps=pieces().filter(p=>p.type==='p'&&p.color===color);
+  const files=ps.map(p=>p.sq[0]);
+  return files.some((f,i)=>files.indexOf(f)!==i);
+}
+// Does `color` have a passed pawn (no enemy pawns blocking/flanking ahead)?
+function hasPassedPawn(color){
+  const ps=pieces();
+  const own=ps.filter(p=>p.type==='p'&&p.color===color);
+  const opp=ps.filter(p=>p.type==='p'&&p.color!==(color==='w'?'b':'w'));
+  return own.some(p=>{
+    const f=FILES.indexOf(p.sq[0]);
+    const rank=parseInt(p.sq[1]);
+    const forward=color==='w'?(r=>r>rank):(r=>r<rank);
+    const adjFiles=[f-1,f,f+1].filter(x=>x>=0&&x<8);
+    return !opp.some(op=>{
+      const of=FILES.indexOf(op.sq[0]);
+      const or=parseInt(op.sq[1]);
+      return adjFiles.includes(of)&&forward(or);
+    });
+  });
+}
+// Square color: true = light, false = dark
+function sqIsLight(sq){
+  const f=FILES.indexOf(sq[0]);
+  const r=parseInt(sq[1])-1;
+  return (f+r)%2===1;
+}
+// Count pieces on kingside (e-h files)
+function kingsideCount(color){
+  return pieces().filter(p=>p.color===color&&'efgh'.includes(p.sq[0])).length;
+}
+// Count captures in history
+function captureCount(){
+  return S.chess.history({verbose:true}).filter(m=>m.captured).length;
+}
+
+// ── COORDINATE questions ──
+function qCoord(){
+  const ps=pieces();
+  if(!ps.length) return null;
+  const moved=movedPieces(); // only pieces that left their start square
+
+  const opts=[
+    // 1. На якій ГОРИЗОНТАЛІ стоїть фігура? (тільки переміщені)
+    ()=>{
+      const pool=moved.filter(p=>p.type!=='p'&&p.type!=='k');
+      if(!pool.length) return null;
+      const p=pool[Math.floor(Math.random()*pool.length)];
+      return{
+        cat:'coord',inputType:'rank',
+        text:`На якій горизонталі стоїть ${preciseLabelAcc(p)}?`,
+        answer:p.sq[1],
+        explain:`${preciseLabel(p)} стоїть на <strong>${p.sq[1]}-й горизонталі</strong> (поле ${p.sq.toUpperCase()})`
+      };
+    },
+    // 2. На якій ЛІНІЇ стоїть фігура? (тільки переміщені)
+    ()=>{
+      const pool=moved.filter(p=>p.type!=='p'&&p.type!=='k');
+      if(!pool.length) return null;
+      const p=pool[Math.floor(Math.random()*pool.length)];
+      return{
+        cat:'coord',inputType:'file',
+        text:`На якій лінії стоїть ${preciseLabelAcc(p)}?`,
+        answer:p.sq[0],
+        explain:`${preciseLabel(p)} стоїть на лінії <strong>«${p.sq[0]}»</strong> (поле ${p.sq.toUpperCase()})`
+      };
+    },
+    // 3. На якому ПОЛІ стоїть фігура? (тільки переміщені — НІКОЛИ "де тура на a8")
+    ()=>{
+      const pool=moved.filter(p=>p.type!=='p'&&p.type!=='k');
+      if(!pool.length) return null;
+      const p=pool[Math.floor(Math.random()*pool.length)];
+      return{
+        cat:'coord',inputType:'square',
+        text:`На якому полі стоїть ${preciseLabelAcc(p)}?`,
+        answer:p.sq,
+        explain:`${preciseLabel(p)} стоїть на полі <strong>${p.sq.toUpperCase()}</strong>`
+      };
+    },
+    // 4. Яка фігура стоїть на конкретному полі? (тільки поля де є переміщені)
+    ()=>{
+      const pool=moved.filter(p=>p.type!=='p');
+      if(!pool.length) return null;
+      const p=pool[Math.floor(Math.random()*pool.length)];
+      return{
+        cat:'coord',inputType:'piece',
+        text:`Яка фігура стоїть на полі ${p.sq.toUpperCase()}?`,
+        answer:p.color+p.type,
+        answerTxt:preciseLabel(p),
+        explain:`На полі <strong>${p.sq.toUpperCase()}</strong> стоїть ${preciseLabel(p).toLowerCase()}`
+      };
+    },
+    // 5. Скільки фігур на лінії X? (тільки лінії з переміщеними фігурами)
+    ()=>{
+      const movedFiles=[...new Set(moved.map(p=>p.sq[0]))];
+      if(!movedFiles.length) return null;
+      const fName=movedFiles[Math.floor(Math.random()*movedFiles.length)];
+      const cnt=ps.filter(p=>p.sq[0]===fName).length;
+      return{
+        cat:'coord',inputType:'number',
+        text:`Скільки фігур стоїть на лінії «${fName}»?`,
+        answer:String(cnt),
+        explain:`На лінії «${fName}» стоїть <strong>${cnt}</strong> ${cnt===1?'фігура':cnt<5?'фігури':'фігур'}`
+      };
+    },
+    // 6. Чи є фігура на центральному полі?
+    ()=>{
+      const central=['d4','d5','e4','e5'];
+      const sq=central[Math.floor(Math.random()*central.length)];
+      const piece=ps.find(p=>p.sq===sq);
+      return{
+        cat:'coord',inputType:'yesno',
+        text:`Чи стоїть якась фігура на полі ${sq.toUpperCase()}?`,
+        answer:piece?'yes':'no',
+        explain:piece
+          ?`Так, на полі <strong>${sq.toUpperCase()}</strong> стоїть ${preciseLabel(piece).toLowerCase()}`
+          :`Ні, поле <strong>${sq.toUpperCase()}</strong> вільне`
+      };
+    },
+    // 7. На якому кольорі поля стоїть слон? (тільки переміщений)
+    ()=>{
+      const bishops=moved.filter(p=>p.type==='b');
+      if(!bishops.length) return null;
+      const b=bishops[Math.floor(Math.random()*bishops.length)];
+      const isLight=sqIsLight(b.sq);
+      return{
+        cat:'coord',inputType:'yesno',
+        text:`Чи стоїть ${bishopLabelAcc(b)} на СВІТЛОМУ полі?`,
+        answer:isLight?'yes':'no',
+        explain:`${bishopLabel(b)} стоїть на полі <strong>${b.sq.toUpperCase()}</strong> — це <strong>${isLight?'світле':'темне'}</strong> поле`
+      };
+    },
+    // 8. Скільки пішаків зайшли на половину суперника?
+    ()=>{
+      const color=Math.random()<0.5?'w':'b';
+      const cn=color==='w'?'білих':'чорних';
+      const adv=color==='w'
+        ?ps.filter(p=>p.type==='p'&&p.color==='w'&&parseInt(p.sq[1])>=5).length
+        :ps.filter(p=>p.type==='p'&&p.color==='b'&&parseInt(p.sq[1])<=4).length;
+      if(adv===0&&Math.random()<0.6) return null; // skip trivial "0 pawns advanced" often
+      return{
+        cat:'coord',inputType:'number',
+        text:`Скільки пішаків ${cn} зайшли на половину суперника?`,
+        answer:String(adv),
+        explain:`<strong>${adv}</strong> пішаків ${cn} знаходяться на половині суперника`
+      };
+    },
+  ];
+  const shuffled=[...opts].sort(()=>Math.random()-0.5);
+  for(const fn of shuffled){try{const q=fn();if(q) return q;}catch(e){}}
+  return null;
+}
+
+// ── THREAT questions (real tactical analysis) ──
+function qThreat(){
+  const ps=pieces();
+  const turn=S.chess.turn();
+  const opp=turn==='w'?'b':'w';
+  const fen=S.chess.fen();
+  const castling=fen.split(' ')[2];
+
+  const opts=[
+    // 1. Чи атакована конкретна фігура?
+    ()=>{
+      const targets=ps.filter(p=>p.type!=='k'&&p.color===turn);
+      if(!targets.length) return null;
+      const p=targets[Math.floor(Math.random()*targets.length)];
+      const attacked=attackedBy(p.sq,opp);
+      return{
+        cat:'threat',inputType:'yesno',
+        text:`Чи нападає суперник на ${preciseLabelAcc(p)} (${p.sq.toUpperCase()})?`,
+        answer:attacked?'yes':'no',
+        explain:attacked
+          ?`Так, ${preciseLabel(p).toLowerCase()} на <strong>${p.sq.toUpperCase()}</strong> перебуває під атакою`
+          :`Ні, ${preciseLabel(p).toLowerCase()} на <strong>${p.sq.toUpperCase()}</strong> не атакований`
+      };
+    },
+    // 2. Скільки фігур нападає на поле X?
+    ()=>{
+      const noPawns=ps.filter(p=>p.type!=='p'&&p.type!=='k');
+      if(!noPawns.length) return null;
+      const p=noPawns[Math.floor(Math.random()*noPawns.length)];
+      const cnt=attackCount(p.sq,opp);
+      return{
+        cat:'threat',inputType:'number',
+        text:`Скільки фігур суперника нападає на поле ${p.sq.toUpperCase()}?`,
+        answer:String(cnt),
+        explain:`На поле <strong>${p.sq.toUpperCase()}</strong> нападає <strong>${cnt}</strong> фігур суперника`
+      };
+    },
+    // 3. Чи захищена фігура власними силами?
+    ()=>{
+      const targets=ps.filter(p=>p.type!=='k'&&p.color===turn);
+      if(!targets.length) return null;
+      const p=targets[Math.floor(Math.random()*targets.length)];
+      const defended=attackedBy(p.sq,turn);
+      return{
+        cat:'threat',inputType:'yesno',
+        text:`Чи захищена власними фігурами ${preciseLabelAcc(p)} на ${p.sq.toUpperCase()}?`,
+        answer:defended?'yes':'no',
+        explain:defended
+          ?`Так, ${preciseLabel(p).toLowerCase()} на <strong>${p.sq.toUpperCase()}</strong> <strong>захищена</strong>`
+          :`Ні, ${preciseLabel(p).toLowerCase()} на <strong>${p.sq.toUpperCase()}</strong> <strong>незахищена</strong> — вісяча!`
+      };
+    },
+    // 4. Чи під шахом король?
+    ()=>{
+      const inCheck=S.chess.in_check();
+      const cn=turn==='w'?'білий':'чорний';
+      return{
+        cat:'threat',inputType:'yesno',
+        text:`Чи стоїть ${cn} король під шахом?`,
+        answer:inCheck?'yes':'no',
+        explain:inCheck
+          ?`Так, <strong>${cn} король під шахом</strong>`
+          :`Ні, ${cn} король у безпеці`
+      };
+    },
+    // 5. Чи є прохідний пішак?
+    ()=>{
+      const color=Math.random()<0.5?'w':'b';
+      const cn=color==='w'?'білих':'чорних';
+      const has=hasPassedPawn(color);
+      return{
+        cat:'threat',inputType:'yesno',
+        text:`Чи є прохідний пішак у ${cn}?`,
+        answer:has?'yes':'no',
+        explain:has
+          ?`Так, у ${cn} є <strong>прохідний пішак</strong> — дорогу ніщо не блокує`
+          :`Ні, у ${cn} немає прохідного пішака`
+      };
+    },
+    // 6. Чи є подвоєні пішаки?
+    ()=>{
+      const color=Math.random()<0.5?'w':'b';
+      const cn=color==='w'?'білих':'чорних';
+      const has=hasDoubledPawns(color);
+      return{
+        cat:'threat',inputType:'yesno',
+        text:`Чи є подвоєні пішаки у ${cn}?`,
+        answer:has?'yes':'no',
+        explain:has
+          ?`Так, у ${cn} є <strong>подвоєні пішаки</strong> на одній лінії`
+          :`Ні, у ${cn} немає подвоєних пішаків`
+      };
+    },
+    // 7. Права рокіровки
+    ()=>{
+      const color=Math.random()<0.5?'w':'b';
+      const key=color==='w'?'K':'k';
+      const has=castling.includes(key);
+      const cn=color==='w'?'білих':'чорних';
+      return{
+        cat:'threat',inputType:'yesno',
+        text:`Чи збережено право на коротку рокіровку у ${cn}?`,
+        answer:has?'yes':'no',
+        explain:has
+          ?`Так, <strong>право на коротку рокіровку у ${cn} збережено</strong>`
+          :`Ні, право на коротку рокіровку у ${cn} <strong>втрачено</strong>`
+      };
+    },
+    // 8. Чи безпечне поле f7/f2?
+    ()=>{
+      const weakSq=turn==='w'?'f2':'f7';
+      const cnt=attackCount(weakSq,opp);
+      return{
+        cat:'threat',inputType:'number',
+        text:`Скільки фігур суперника атакує поле ${weakSq.toUpperCase()}?`,
+        answer:String(cnt),
+        explain:`На уразливе поле <strong>${weakSq.toUpperCase()}</strong> нападає <strong>${cnt}</strong> фігур суперника`
+      };
+    },
+  ];
+  const shuffled=[...opts].sort(()=>Math.random()-0.5);
+  for(const fn of shuffled){try{const q=fn();if(q) return q;}catch(e){}}
+  return qCoord();
+}
+
+// ── DYNAMIC questions (structure, history, pawn play) ──
+function qDynamic(){
+  const hist=S.chess.history({verbose:true});
+  if(!hist.length) return qCoord();
+  const last=hist[hist.length-1];
+  const board=S.chess.board();
+
+  const opts=[
+    // 1. Яка фігура зробила останній хід?
+    ()=>({
+      cat:'dynamic',inputType:'piece',
+      text:`Яка фігура зробила останній хід?`,
+      answer:last.color+last.piece,
+      answerTxt:pname(last.piece,last.color),
+      explain:`Останній хід зробив ${pname(last.piece,last.color).toLowerCase()} — <strong>${last.san}</strong> (з ${last.from.toUpperCase()} на ${last.to.toUpperCase()})`
+    }),
+    // 2. Чи був останній хід взяттям?
+    ()=>({
+      cat:'dynamic',inputType:'yesno',
+      text:`Чи був останній хід (${last.san}) взяттям?`,
+      answer:last.captured?'yes':'no',
+      explain:last.captured
+        ?`Так, ход <strong>${last.san}</strong> — це <strong>взяття</strong> ${pnameGen(last.captured,last.color==='w'?'b':'w')}`
+        :`Ні, хід <strong>${last.san}</strong> — це звичайний хід без взяття`
+    }),
+    // 3. Звідки пішла остання фігура?
+    ()=>({
+      cat:'dynamic',inputType:'square',
+      text:`З якого поля зробила хід остання фігура (${PIECE_UA[last.piece]||last.piece}, ${last.san})?`,
+      answer:last.from,
+      explain:`${pname(last.piece,last.color)} перейшла з <strong>${last.from.toUpperCase()}</strong> на <strong>${last.to.toUpperCase()}</strong>`
+    }),
+    // 4. Скільки взять було в партії?
+    ()=>{
+      const caps=captureCount();
+      // cap answer at 9 for numGrid
+      if(caps>9) return null;
+      return{
+        cat:'dynamic',inputType:'number',
+        text:`Скільки взять (загалом) відбулось у цій партії?`,
+        answer:String(caps),
+        explain:`У партії відбулось <strong>${caps}</strong> взять`
+      };
+    },
+    // 5. Яка сторона зробила більше ходів пішаками?
+    ()=>{
+      const wPawnMoves=hist.filter(m=>m.piece==='p'&&m.color==='w').length;
+      const bPawnMoves=hist.filter(m=>m.piece==='p'&&m.color==='b').length;
+      if(wPawnMoves===bPawnMoves) return null;
+      return{
+        cat:'dynamic',inputType:'yesno',
+        yesLabel:'⬜ Білі',noLabel:'⬛ Чорні',
+        text:`Хто зробив більше ходів пішаками — білі чи чорні?`,
+        answer:wPawnMoves>bPawnMoves?'yes':'no',
+        explain:`Білі зробили ходів пішаками: <strong>${wPawnMoves}</strong>, чорні: <strong>${bPawnMoves}</strong>`
+      };
+    },
+    // 6. Чи відкрита конкретна лінія?
+    ()=>{
+      const fIdx=Math.floor(Math.random()*8);
+      const fName=FILES[fIdx];
+      const open=fileOpen(fIdx);
+      return{
+        cat:'dynamic',inputType:'yesno',
+        text:`Чи відкрита лінія «${fName}» (немає жодного пішака)?`,
+        answer:open?'yes':'no',
+        explain:open
+          ?`Так, лінія «${fName}» <strong>відкрита</strong> — пішаків немає`
+          :`Ні, лінія «${fName}» <strong>закрита</strong> пішаком(ами)`
+      };
+    },
+    // 7. Яка сторона більше фігур тримає на королівському фланзі?
+    ()=>{
+      const wK=kingsideCount('w');
+      const bK=kingsideCount('b');
+      if(wK===bK) return null;
+      return{
+        cat:'dynamic',inputType:'yesno',
+        yesLabel:'⬜ Білі',noLabel:'⬛ Чорні',
+        text:`Хто тримає більше фігур на королівському фланзі (лінії e–h)?`,
+        answer:wK>bK?'yes':'no',
+        explain:`На королівському фланзі: білих — <strong>${wK}</strong>, чорних — <strong>${bK}</strong>`
+      };
+    },
+    // 8. Чи є пішак на 7-й (для білих) або 2-й (для чорних) горизонталі — загроза перетворення?
+    ()=>{
+      const ps=pieces();
+      const w7=ps.filter(p=>p.type==='p'&&p.color==='w'&&p.sq[1]==='7').length;
+      const b2=ps.filter(p=>p.type==='p'&&p.color==='b'&&p.sq[1]==='2').length;
+      const any=(w7+b2)>0;
+      return{
+        cat:'dynamic',inputType:'yesno',
+        text:`Чи є пішак на передостанній горизонталі (загроза перетворення)?`,
+        answer:any?'yes':'no',
+        explain:any
+          ?`Так! Пішаки перед перетворенням: ${w7?`білих на 7-й — ${w7}`:''}${w7&&b2?', ':''}${b2?`чорних на 2-й — ${b2}`:''}`
+          :`Ні, жоден пішак поки не загрожує перетворенням`
+      };
+    },
+  ];
+  const shuffled=[...opts].sort(()=>Math.random()-0.5);
+  for(const fn of shuffled){try{const q=fn();if(q) return q;}catch(e){}}
+  return qCoord();
+}
+
+// ╔══════════════════════════════════════════════╗
+// ║  QUESTION UI                                 ║
+// ╚══════════════════════════════════════════════╝
+function renderQuestion(q){
+  const full=Math.floor(S.idx/2);
+  document.getElementById('qMeta').textContent=`ПІСЛЯ ${S.idx} НАПІВХОДІВ (${full} ПОВНИХ)`;
+  document.getElementById('qCat').textContent=CAT_UA[q.cat]||q.cat.toUpperCase();
+  document.getElementById('qText').textContent=q.text;
+  S.answer=null;
+
+  ['iSquare','iPiece','iYN','iNum','iFile','iRank'].forEach(id=>document.getElementById(id).style.display='none');
+
+  if(q.inputType==='square'){
+    buildBlindGrid();
+    document.getElementById('iSquare').style.display='block';
+  }else if(q.inputType==='piece'){
+    buildPieceGrid();
+    document.getElementById('iPiece').style.display='block';
+  }else if(q.inputType==='yesno'){
+    setupYN(q);
+    document.getElementById('iYN').style.display='block';
+  }else if(q.inputType==='number'){
+    buildNumGrid();
+    document.getElementById('iNum').style.display='block';
+  }else if(q.inputType==='file'){
+    buildFileGrid();
+    document.getElementById('iFile').style.display='block';
+  }else if(q.inputType==='rank'){
+    buildRankGrid();
+    document.getElementById('iRank').style.display='block';
+  }
+}
+
+function buildBlindGrid(){
+  const g=document.getElementById('blindGrid');
+  g.innerHTML='';
+  for(let r=0;r<8;r++) for(let c=0;c<8;c++){
+    const sq=FILES[c]+RANKS[r];
+    const cell=document.createElement('div');
+    cell.className='bl-cell';cell.textContent=sq;
+    cell.onclick=()=>{
+      document.querySelectorAll('.bl-cell').forEach(x=>x.classList.remove('sel'));
+      cell.classList.add('sel');S.answer=sq;
+    };
+    g.appendChild(cell);
+  }
+}
+
+function buildPieceGrid(){
+  const g=document.getElementById('pieceGrid');
+  g.innerHTML='';
+  const list=[
+    {k:'wp',g:UNICODE.wp,l:'Білий пішак'},
+    {k:'wn',g:UNICODE.wn,l:'Білий кінь'},
+    {k:'wb',g:UNICODE.wb,l:'Білий слон'},
+    {k:'wr',g:UNICODE.wr,l:'Біла тура'},
+    {k:'wq',g:UNICODE.wq,l:'Білий ферзь'},
+    {k:'wk',g:UNICODE.wk,l:'Білий кор.'},
+    {k:'bp',g:UNICODE.bp,l:'Чорний пішак'},
+    {k:'bn',g:UNICODE.bn,l:'Чорний кінь'},
+    {k:'bb',g:UNICODE.bb,l:'Чорний слон'},
+    {k:'br',g:UNICODE.br,l:'Чорна тура'},
+    {k:'bq',g:UNICODE.bq,l:'Чорний ферзь'},
+    {k:'bk',g:UNICODE.bk,l:'Чорний кор.'},
+  ];
+  list.forEach(p=>{
+    const btn=document.createElement('div');
+    btn.className='p-btn';
+    btn.innerHTML=`<div class="p-glyph">${p.g}</div><div class="p-label">${p.l}</div>`;
+    btn.onclick=()=>{
+      document.querySelectorAll('.p-btn').forEach(x=>x.classList.remove('sel'));
+      btn.classList.add('sel');S.answer=p.k;
+    };
+    g.appendChild(btn);
+  });
+}
+
+function setupYN(q){
+  document.getElementById('ynYes').textContent=q.yesLabel||'✅ Так';
+  document.getElementById('ynNo').textContent=q.noLabel||'❌ Ні';
+  document.getElementById('ynYes').className='yn-btn yes';
+  document.getElementById('ynNo').className='yn-btn no';
+}
+function pickYN(v){
+  S.answer=v;
+  document.getElementById('ynYes').className='yn-btn yes'+(v==='yes'?' sel':'');
+  document.getElementById('ynNo').className='yn-btn no'+(v==='no'?' sel':'');
+}
+
+function buildNumGrid(){
+  const g=document.getElementById('numGrid');
+  g.innerHTML='';
+  for(let n=0;n<=9;n++){
+    const cell=document.createElement('div');
+    cell.className='num-cell';cell.textContent=n;
+    cell.onclick=()=>{
+      document.querySelectorAll('.num-cell').forEach(x=>x.classList.remove('sel'));
+      cell.classList.add('sel');S.answer=String(n);
+    };
+    g.appendChild(cell);
+  }
+}
+
+function buildFileGrid(){
+  const g=document.getElementById('fileGrid');
+  g.innerHTML='';
+  FILES.forEach(f=>{
+    const cell=document.createElement('div');
+    cell.className='file-cell';cell.textContent=f;
+    cell.onclick=()=>{
+      document.querySelectorAll('.file-cell').forEach(x=>x.classList.remove('sel'));
+      cell.classList.add('sel');S.answer=f;
+    };
+    g.appendChild(cell);
+  });
+}
+
+function buildRankGrid(){
+  const g=document.getElementById('rankGrid');
+  g.innerHTML='';
+  for(let n=1;n<=8;n++){
+    const cell=document.createElement('div');
+    cell.className='rank-cell';cell.textContent=n;
+    cell.onclick=()=>{
+      document.querySelectorAll('.rank-cell').forEach(x=>x.classList.remove('sel'));
+      cell.classList.add('sel');S.answer=String(n);
+    };
+    g.appendChild(cell);
+  }
+}
+
+// ╔══════════════════════════════════════════════╗
+// ║  ANSWER & FEEDBACK                           ║
+// ╚══════════════════════════════════════════════╝
+function submitAnswer(){
+  if(!S.answer){notif('Оберіть відповідь!');return}
+  const q=S.question;
+  const ok=S.answer===q.answer;
+
+  if(ok){S.sess.c++}else{S.sess.w++}
+  S.sess.depth=Math.max(S.sess.depth,S.idx);
+  updateScoreBadge();
+  persistAnswer(ok,q.cat); // async — non-blocking
+
+  document.getElementById('fbIcon').textContent=ok?'🎯':'❌';
+  document.getElementById('fbTitle').textContent=ok?'Правильно!':'Хибно!';
+  document.getElementById('fbTitle').className='fb-title '+(ok?'ok':'bad');
+
+  // infinite mode: wrong answer ends session
+  const infiniteFail=S.mode==='infinite'&&!ok;
+  if(infiniteFail) S.afterQueue='gameover';
+
+  const moreQ=S.questionQIdx<S.questionQueue.length-1&&!infiniteFail;
+  const nextLabel=moreQ?`Питання ${S.questionQIdx+2} ▶`:'Продовжити ▶';
+
+  document.getElementById('fbDetail').innerHTML=`
+    <div>${q.explain}</div>
+    <div class="fb-score">✅ ${S.sess.c} правильних · ❌ ${S.sess.w} хибних</div>
+  `;
+
+  // Update continue button label
+  document.getElementById('fbContinueBtn').textContent=nextLabel;
+
+  speak(ok?'Правильно!':`Хибно. ${q.explain.replace(/<[^>]+>/g,'')}`);
+  show('sFeedback');
+}
+
+function doReveal(){renderBoard();show('sReveal')}
+
+function doAfterReveal(){_afterFeedback()}
+
+function doContinue(){_afterFeedback()}
+
+function _afterFeedback(){
+  const infiniteFail=S.mode==='infinite'&&S.afterQueue==='gameover';
+  const moreQ=S.questionQIdx<S.questionQueue.length-1&&!infiniteFail;
+  if(moreQ){
+    S.questionQIdx++;
+    showCurrentQuestion();
+    return;
+  }
+  // all queue done
+  if(S.afterQueue==='gameover'){
+    if(S.isGroup) showParticipantScore();
+    else showGameOver();
+  }else{
+    show('sDictation');
+  }
+}
+
+// ╔══════════════════════════════════════════════╗
+// ║  BOARD RENDER                                ║
+// ╚══════════════════════════════════════════════╝
+function renderBoard(){
+  const c=document.getElementById('boardContainer');
+  c.innerHTML='';
+  const board=S.chess.board();
+  const hist=S.chess.history({verbose:true});
+  const last=hist.length?hist[hist.length-1]:null;
+  const hlSet=new Set(last?[last.from,last.to]:[]);
+
+  const outer=document.createElement('div');
+  outer.className='board-outer';
+
+  // top file labels
+  const topRow=document.createElement('div');
+  topRow.className='board-coords-top';
+  topRow.appendChild(document.createElement('div')); // corner
+  FILES.forEach(f=>{
+    const lbl=document.createElement('div');
+    lbl.className='coord';lbl.textContent=f;
+    topRow.appendChild(lbl);
+  });
+  outer.appendChild(topRow);
+
+  for(let r=0;r<8;r++){
+    const row=document.createElement('div');
+    row.className='board-row';
+    const rankLbl=document.createElement('div');
+    rankLbl.className='coord';rankLbl.textContent=RANKS[r];
+    row.appendChild(rankLbl);
+    for(let c2=0;c2<8;c2++){
+      const sq=FILES[c2]+RANKS[r];
+      const light=(r+c2)%2===0;
+      const cell=document.createElement('div');
+      cell.className='sq '+(light?'light':'dark')+(hlSet.has(sq)?' hl':'');
+      const piece=board[r][c2];
+      if(piece){
+        const span=document.createElement('span');
+        span.textContent=UNICODE[piece.color+piece.type]||'';
+        span.className=piece.color==='w'?'piece-w':'piece-b';
+        cell.appendChild(span);
+      }
+      row.appendChild(cell);
+    }
+    outer.appendChild(row);
+  }
+  c.appendChild(outer);
+
+  // move list
+  const moves=S.chess.history();
+  const pairs=[];
+  for(let i=0;i<moves.length;i+=2)
+    pairs.push(`${i/2+1}.${moves[i]}${moves[i+1]?' '+moves[i+1]:''}`);
+  document.getElementById('revMoves').textContent=pairs.join('  ');
+  document.getElementById('revLabel').textContent=`Позиція після ${S.idx} напівходів`;
+}
+
+// ╔══════════════════════════════════════════════╗
+// ║  GAME OVER                                   ║
+// ╚══════════════════════════════════════════════╝
+function showGameOver(){
+  if(S.isGroup){showParticipantScore();return;}
+  const {c,w,depth}=S.sess;
+  const tot=c+w;
+  const pct=tot>0?Math.round(c/tot*100):0;
+
+  document.getElementById('goCrown').textContent=pct>=80?'🏆':pct>=50?'⚔️':'📚';
+  document.getElementById('goTitle').textContent=
+    S.mode==='infinite'?'Кінець серії':'Тренування завершено';
+  document.getElementById('goSub').textContent=
+    pct>=80?'Відмінна робота!':pct>=50?'Хороший результат!':'Продовжуй тренуватися!';
+
+  document.getElementById('goStats').innerHTML=`
+    <div class="go-stat"><div class="go-val">${pct}%</div><div class="go-lbl">Точність</div></div>
+    <div class="go-stat"><div class="go-val">${depth}</div><div class="go-lbl">Глибина</div></div>
+    <div class="go-stat"><div class="go-val">${c}</div><div class="go-lbl">Правильних</div></div>
+    <div class="go-stat"><div class="go-val">${w}</div><div class="go-lbl">Хибних</div></div>
+  `;
+  speak(`Тренування завершено. Точність ${pct} відсотків.`);
+  persistSession(currentPlayerName(), S.sess, S.mode);
+  show('sGameOver');
+}
+
+// ╔══════════════════════════════════════════════╗
+// ║  FIREBASE CONFIG                             ║
+// ║  ▼▼▼ Вставте свій конфіг нижче ▼▼▼          ║
+// ╚══════════════════════════════════════════════╝
+const FIREBASE_CONFIG = {
+  apiKey:            "AIzaSyAhWcR6Pi5K1DWhjoS-vSLwhop5Go2vKrY",
+  authDomain:        "chess-notation-team.firebaseapp.com",
+  projectId:         "chess-notation-team",
+  storageBucket:     "chess-notation-team.firebasestorage.app",
+  messagingSenderId: "266723095822",
+  appId:             "1:266723095822:web:55f7e303dfb62bb9c8d35f",
+  databaseURL:       "https://chess-notation-team-default-rtdb.firebaseio.com",
+};
+// ▲▲▲ Кінець конфігу ▲▲▲
+
+// Firebase path prefix
+const FB_ROOT = 'blindfold';
+
+let fbDB = null; // Firebase Realtime Database reference
+
+function initFirebase(){
+  try{
+    if(typeof firebase === 'undefined') throw new Error('SDK not loaded');
+    if(FIREBASE_CONFIG.apiKey.startsWith('ВСТАВТЕ')) throw new Error('Config not set');
+    const app = firebase.apps.length
+      ? firebase.apps[0]
+      : firebase.initializeApp(FIREBASE_CONFIG);
+    fbDB = firebase.database(app);
+    setFbStatus('🟢 Firebase підключено');
+    console.log('Firebase OK');
+  }catch(e){
+    fbDB=null;
+    setFbStatus(e.message.includes('not set')
+      ? '⚪ Firebase: вставте конфіг (збереження локально)'
+      : '🔴 Firebase offline — збереження локально');
+    console.warn('Firebase init failed:', e.message);
+  }
+}
+
+function setFbStatus(msg){
+  const el=document.getElementById('fbStatus');
+  if(el) el.textContent=msg;
+}
+
+// Sanitize name for Firebase key (no . # $ [ ] /)
+function playerKey(name){
+  return (name||'Гість').trim()
+    .toLowerCase()
+    .replace(/[.#$[\]/]/g,'_')
+    .replace(/\s+/g,'_')
+    .slice(0,40) || 'guest';
+}
+
+// ── Current player name ──
+function currentPlayerName(){
+  const inp=document.getElementById('soloNameInput');
+  const name=(inp?.value||'').trim();
+  if(name) localStorage.setItem('bv_player',name);
+  return name || localStorage.getItem('bv_player') || 'Гість';
+}
+
+// ── Write one answer to Firebase ──
+async function fbSaveAnswer(playerName, ok, cat, depth){
+  if(!fbDB) return false;
+  try{
+    const key=playerKey(playerName);
+    const ref=fbDB.ref(`${FB_ROOT}/players/${key}`);
+    const snap=await ref.once('value');
+    const cur=snap.val()||{};
+
+    // merge update
+    const total={c:(cur.total?.c||0)+(ok?1:0), w:(cur.total?.w||0)+(!ok?1:0)};
+    const cats={...(cur.cats||{})};
+    cats[cat]={c:(cats[cat]?.c||0)+(ok?1:0), w:(cats[cat]?.w||0)+(!ok?1:0)};
+    const best=Math.max(cur.best||0, depth);
+
+    await ref.update({name:playerName, total, cats, best,
+      lastSeen: new Date().toISOString().slice(0,10)});
+    return true;
+  }catch(e){
+    console.warn('fbSaveAnswer error:', e.message);
+    return false;
+  }
+}
+
+// ── Save full session summary to Firebase ──
+async function fbSaveSession(playerName, sess, mode){
+  if(!fbDB) return;
+  try{
+    const key=playerKey(playerName);
+    const ref=fbDB.ref(`${FB_ROOT}/players/${key}/sessions`);
+    const snap=await ref.once('value');
+    const sessions=Object.values(snap.val()||{});
+    // keep last 20 sessions
+    sessions.push({
+      date:new Date().toISOString().slice(0,10),
+      mode, depth:sess.depth,
+      c:sess.c, w:sess.w,
+      pct:sess.c+sess.w>0?Math.round(sess.c/(sess.c+sess.w)*100):0
+    });
+    const trimmed=sessions.slice(-20);
+    await ref.set(trimmed.reduce((o,s,i)=>{o[i]=s;return o},{}));
+  }catch(e){
+    console.warn('fbSaveSession error:', e.message);
+  }
+}
+
+// ╔══════════════════════════════════════════════╗
+// ║  STATS                                       ║
+// ╚══════════════════════════════════════════════╝
+const STORE='bv_v1';
+
+function loadData(){
+  try{return JSON.parse(localStorage.getItem(STORE)||'{}')}catch(e){return{}}
+}
+function saveData(d){localStorage.setItem(STORE,JSON.stringify(d))}
+
+// persistAnswer — writes to both Firebase AND localStorage
+async function persistAnswer(ok, cat){
+  // 1. localStorage (instant fallback)
+  const d=loadData();
+  d.total=d.total||{c:0,w:0};
+  d.cats=d.cats||{};
+  d.best=d.best||0;
+  if(ok) d.total.c++; else d.total.w++;
+  d.cats[cat]=d.cats[cat]||{c:0,w:0};
+  if(ok) d.cats[cat].c++; else d.cats[cat].w++;
+  d.best=Math.max(d.best, S.sess.depth);
+  saveData(d);
+
+  // 2. Firebase (async, non-blocking)
+  const name = S.isGroup
+    ? S.participants[S.curPIdx]?.name
+    : currentPlayerName();
+  if(name) fbSaveAnswer(name, ok, cat, S.sess.depth);
+}
+
+// Called at end of each session (solo + each participant in group)
+function persistSession(playerName, sess, mode){
+  fbSaveSession(playerName, sess, mode);
+}
+
+// ── Stats screen ──
+async function renderStats(){
+  // Show localStorage stats immediately
+  const d=loadData();
+  const tot=(d.total?.c||0)+(d.total?.w||0);
+  const pct=tot>0?Math.round((d.total?.c||0)/tot*100):0;
+
+  document.getElementById('statsGrid').innerHTML=`
+    <div class="stat-card"><div class="stat-val">${pct}%</div><div class="stat-lbl">Моя точність</div></div>
+    <div class="stat-card"><div class="stat-val">${d.best||0}</div><div class="stat-lbl">Рекорд глибини</div></div>
+    <div class="stat-card"><div class="stat-val">${d.total?.c||0}</div><div class="stat-lbl">Правильних</div></div>
+    <div class="stat-card"><div class="stat-val">${d.total?.w||0}</div><div class="stat-lbl">Хибних</div></div>
+  `;
+
+  const catNames={coord:'📍 Координата',threat:'⚔️ Загроза',dynamic:'🎯 Динаміка'};
+  let catHtml='';
+  for(const [cat,vals] of Object.entries(d.cats||{})){
+    const ct=(vals.c||0)+(vals.w||0);
+    const cp=ct>0?Math.round((vals.c||0)/ct*100):0;
+    catHtml+=`
+      <div class="cat-bar">
+        <div class="cat-bar-header">
+          <span>${catNames[cat]||cat}</span>
+          <span style="color:var(--gold)">${cp}%</span>
+        </div>
+        <div class="cat-bar-track"><div class="cat-bar-fill" style="width:${cp}%"></div></div>
+        <div class="cat-bar-footer">✅ ${vals.c||0} / ❌ ${vals.w||0}</div>
+      </div>`;
+  }
+  document.getElementById('catStats').innerHTML=
+    catHtml||'<p style="color:var(--text3);font-size:13px;text-align:center">Ще немає даних</p>';
+
+  // Try to load all players from Firebase
+  if(!fbDB){
+    document.getElementById('allPlayersSection').style.display='none';
+    return;
+  }
+  document.getElementById('allPlayersSection').style.display='block';
+  document.getElementById('allPlayersList').innerHTML=
+    '<p style="color:var(--text3);font-size:13px;text-align:center">Завантаження…</p>';
+
+  try{
+    const snap=await fbDB.ref(`${FB_ROOT}/players`).once('value');
+    const data=snap.val()||{};
+    const players=Object.values(data).sort((a,b)=>{
+      const pa=a.total?a.total.c/(a.total.c+a.total.w||1):0;
+      const pb=b.total?b.total.c/(b.total.c+b.total.w||1):0;
+      return pb-pa;
+    });
+
+    if(!players.length){
+      document.getElementById('allPlayersList').innerHTML=
+        '<p style="color:var(--text3);font-size:13px;text-align:center">Немає гравців у базі</p>';
+      return;
+    }
+
+    let html='';
+    players.forEach((p,i)=>{
+      const tot=(p.total?.c||0)+(p.total?.w||0);
+      const pct=tot>0?Math.round((p.total?.c||0)/tot*100):0;
+      const medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}`;
+      html+=`
+        <div class="lb-row${i===0?' first':''}">
+          <div class="lb-rank">${medal}</div>
+          <div class="lb-info">
+            <div class="lb-name">${p.name||'?'}</div>
+            <div class="lb-meta">✅ ${p.total?.c||0} · ❌ ${p.total?.w||0} · глибина: ${p.best||0} · ${p.lastSeen||''}</div>
+          </div>
+          <div class="lb-pct">${pct}%</div>
+        </div>`;
+    });
+    document.getElementById('allPlayersList').innerHTML=html;
+  }catch(e){
+    document.getElementById('allPlayersList').innerHTML=
+      '<p style="color:var(--text3);font-size:13px;text-align:center">Помилка завантаження</p>';
+    console.warn('renderStats Firebase error:', e);
+  }
+}
+
+// Init Firebase on page load
+initFirebase();
+
+// Restore saved name
+(function(){
+  const saved=localStorage.getItem('bv_player');
+  if(saved){
+    const inp=document.getElementById('soloNameInput');
+    if(inp) inp.value=saved;
+  }
+})();
+</script>
+</body>
+</html>
