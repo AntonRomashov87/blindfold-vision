@@ -3361,16 +3361,16 @@ function rookLabel(p){
   const col=p.color==='w'?'біла':'чорна';
   if(rooks.length<=1) return `${col} тура`;
   return 'abcd'.includes(p.sq[0])
-    ?`${col} тура з ферзевого флангу `
-    :`${col} тура з королівського флангу`;
+    ?`${col} ферзева тура`
+    :`${col} королева тура`;
 }
 function rookLabelAcc(p){
   const rooks=pieces().filter(r=>r.type==='r'&&r.color===p.color);
   const col=p.color==='w'?'білу':'чорну';
   if(rooks.length<=1) return `${col} туру`;
   return 'abcd'.includes(p.sq[0])
-    ?`${col} туру з ферзевого флангу `
-    :`${col} туру з королівського флангу`;
+    ?`${col} ферзеву туру`
+    :`${col} королеву туру`;
 }
 
 // Knight label: specify queenside/kingside when both alive
@@ -3379,16 +3379,16 @@ function knightLabel(p){
   const col=p.color==='w'?'білий':'чорний';
   if(kts.length<=1) return `${col} кінь`;
   return 'abcd'.includes(p.sq[0])
-    ?`${col} кінь з ферзевого флангу`
-    :`${col} кінь з королівського флангу`;
+    ?`${col} ферзевий кінь`
+    :`${col} королівський кінь`;
 }
 function knightLabelAcc(p){
   const kts=pieces().filter(k=>k.type==='n'&&k.color===p.color);
   const col=p.color==='w'?'білого':'чорного';
   if(kts.length<=1) return `${col} коня`;
   return 'abcd'.includes(p.sq[0])
-    ?`${col} коня з ферзевого флангу`
-    :`${col} коня з королівського флангу`;
+    ?`${col} ферзевого коня`
+    :`${col} королівського коня`;
 }
 
 // Precise label for any piece
@@ -3590,7 +3590,7 @@ function qCoord(){
           :`Ні, поле <strong>${sq.toUpperCase()}</strong> вільне`
       };
     },
-    // 7. На клитинці якого кольору стоїть слон? (тільки переміщений)
+    // 7. На якому кольорі поля стоїть слон? (тільки переміщений)
     ()=>{
       const bishops=moved.filter(p=>p.type==='b');
       if(!bishops.length) return null;
@@ -4040,6 +4040,11 @@ function _afterFeedback(){
     if(S.isGroup) showParticipantScore();
     else showGameOver();
   }else{
+    // ← оновлюємо лічильник ходу перед поверненням на dictation
+    const full=Math.ceil(S.idx/2);
+    document.getElementById('dictLabel').textContent=`ХІД ${full}`;
+    updateDepthTrack();
+    renderNotation();
     show('sDictation');
   }
 }
