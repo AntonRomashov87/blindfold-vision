@@ -3229,7 +3229,11 @@ function updateScoreBadge(){
 }
 
 function stepForward(silent=false){
-  if(S.idx>=S.line.length){doAskNow();return}
+  if(S.idx>=S.line.length){
+    // останній хід вже на екрані — невелика пауза перед питаннями
+    setTimeout(()=>doAskNow(), 1400);
+    return;
+  }
   const cfg=MODE_CFG[S.mode];
   const san=S.line[S.idx];
   S.chess.move(san);
@@ -3244,7 +3248,15 @@ function stepForward(silent=false){
   const shouldAsk=S.idx>=S.line.length||
     (S.idx>=cfg.min*2 && S.mode==='infinite')||
     (S.idx>=cfg.max*2 && S.idx>=cfg.min*2);
-  if(shouldAsk){doAskNow()}
+  if(shouldAsk){
+    // блокуємо кнопку "Далі" на час паузи
+    const btn=document.getElementById('fbContinueBtn');
+    if(btn){btn.disabled=true; btn.style.opacity='0.4';}
+    setTimeout(()=>{
+      if(btn){btn.disabled=false; btn.style.opacity='';}
+      doAskNow();
+    }, 1600);
+  }
 }
 
 function doNext(){stepForward(false)}
