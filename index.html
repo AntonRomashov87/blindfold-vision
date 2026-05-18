@@ -3215,4 +3215,1429 @@ function renderNotation(){
       const cls=(i%2===0?'mv-w':'mv-b')+(i===S.idx-1?' active':'');
       html+=`<span class="${cls}" id="mv${i}">${san} </span>`;
     }else{
-      html+=`<span class="mv-dot">· </span>`
+      html+=`<span class="mv-dot">· </span>`;
+    }
+  }
+  box.innerHTML=html;
+  const cur=document.getElementById('mv'+(S.idx-1));
+  if(cur) cur.scrollIntoView({block:'nearest',behavior:'smooth'});
+}
+
+function updateScoreBadge(){
+  document.getElementById('sc').textContent=S.sess.c;
+  document.getElementById('sw').textContent=S.sess.w;
+}
+
+function stepForward(silent=false){
+  if(S.idx>=S.line.length){doAskNow();return}
+  const cfg=MODE_CFG[S.mode];
+  const san=S.line[S.idx];
+  S.chess.move(san);
+  S.idx++;
+  updateDepthTrack();
+  renderNotation();
+  const full=Math.ceil(S.idx/2);
+  document.getElementById('dictLabel').textContent=`ХІД ${full}`;
+  if(!silent) speak(sanSpeech(san));
+
+  // Auto-question trigger
+  const shouldAsk=S.idx>=S.line.length||
+    (S.idx>=cfg.min*2 && S.mode==='infinite')||
+    (S.idx>=cfg.max*2 && S.idx>=cfg.min*2);
+  if(shouldAsk){doAskNow()}
+}
+
+function doNext(){stepForward(false)}
+function doRepeat(){
+  if(S.idx>0) speak(sanSpeech(S.line[S.idx-1]));
+}
+const Q_PER_ROUND=3;
+
+function generateQuestionQueue(n){
+  const cfg=MODE_CFG[S.mode];
+  const cats=cfg.cats;
+  const fns={coord:qCoord,threat:qThreat,dynamic:qDynamic};
+  const queue=[];
+  const usedTexts=new Set();
+  const usedCats=[];
+  let attempts=0;
+  while(queue.length<n && attempts<40){
+    attempts++;
+    // pick category — prefer variety
+    const remaining=cats.filter(c=>usedCats.filter(x=>x===c).length<Math.ceil(n/cats.length));
+    const pool=remaining.length?remaining:cats;
+    // weighted pick
+    const tot=pool.reduce((a,c)=>a+CAT_W[c],0);
+    let r=Math.random()*tot, cat=pool[0];
+    for(const c of pool){r-=CAT_W[c];if(r<=0){cat=c;break}}
+    try{
+      const q=(fns[cat]||qCoord)();
+      if(!q||usedTexts.has(q.text)) continue;
+      usedTexts.add(q.text);
+      usedCats.push(cat);
+      queue.push(q);
+    }catch(e){}
+  }
+  return queue;
+}
+
+function doAskNow(){
+  const queue=generateQuestionQueue(Q_PER_ROUND);
+  if(!queue.length){
+    if(S.isGroup) showParticipantScore();
+    else showGameOver();
+    return;
+  }
+  S.questionQueue=queue;
+  S.questionQIdx=0;
+  S.afterQueue=S.idx>=S.line.length?'gameover':'continue';
+  showCurrentQuestion();
+}
+
+function showCurrentQuestion(){
+  const q=S.questionQueue[S.questionQIdx];
+  S.question=q;
+  S.answer=null;
+  renderQuestion(q);
+  // render progress pips
+  const prog=document.getElementById('qProgress');
+  prog.innerHTML='';
+  S.questionQueue.forEach((_,i)=>{
+    const pip=document.createElement('div');
+    pip.className='q-pip'+(i<S.questionQIdx?' done':i===S.questionQIdx?' active':'');
+    prog.appendChild(pip);
+  });
+  const full=Math.floor(S.idx/2);
+  document.getElementById('qMeta').textContent=
+    `ПІСЛЯ ${S.idx} НАПІВХОДІВ · ПИТАННЯ ${S.questionQIdx+1}/${S.questionQueue.length}`;
+  show('sQuestion');
+  speak(q.text);
+}
+
+// ╔══════════════════════════════════════════════╗
+// ║  QUESTION GENERATION                         ║
+// ╚══════════════════════════════════════════════╝
+// ╔══════════════════════════════════════════════╗
+// ║  QUESTION ENGINE                             ║
+// ╚══════════════════════════════════════════════╝
+
+// Starting squares — pieces here are trivially "obviously" placed
+const START_SQ={
+  wp:['a2','b2','c2','d2','e2','f2','g2','h2'],
+  wn:['b1','g1'], wb:['c1','f1'], wr:['a1','h1'],
+  wq:['d1'],      wk:['e1'],
+  bp:['a7','b7','c7','d7','e7','f7','g7','h7'],
+  bn:['b8','g8'], bb:['c8','f8'], br:['a8','h8'],
+  bq:['d8'],      bk:['e8'],
+};
+
+function isOnStart(p){
+  return (START_SQ[p.color+p.type]||[]).includes(p.sq);
+}
+
+// "Interesting" = has moved from starting square
+function movedPieces(){return pieces().filter(p=>!isOnStart(p));}
+function interestingPieces(){
+  // pieces that moved OR pieces where their start is occupied by a DIFFERENT piece
+  const mp=movedPieces();
+  return mp.filter(p=>p.type!=='k'); // don't ask about king unless moved
+}
+
+// Bishop label: always specify square color to avoid ambiguity
+function bishopLabel(p){
+  const light=sqIsLight(p.sq);
+  const col=p.color==='w'?'білий':'чорний';
+  return `${col} ${light?'білопільний':'чорнопільний'} слон`;
+}
+function bishopLabelAcc(p){
+  const light=sqIsLight(p.sq);
+  const col=p.color==='w'?'білого':'чорного';
+  return `${col} ${light?'білопільного':'чорнопільного'} слона`;
+}
+
+// Rook label: if both rooks still alive, specify queenside/kingside
+function rookLabel(p){
+  const rooks=pieces().filter(r=>r.type==='r'&&r.color===p.color);
+  const col=p.color==='w'?'біла':'чорна';
+  if(rooks.length<=1) return `${col} тура`;
+  return 'abcd'.includes(p.sq[0])
+    ?`${col} ферзева тура`
+    :`${col} королева тура`;
+}
+function rookLabelAcc(p){
+  const rooks=pieces().filter(r=>r.type==='r'&&r.color===p.color);
+  const col=p.color==='w'?'білу':'чорну';
+  if(rooks.length<=1) return `${col} туру`;
+  return 'abcd'.includes(p.sq[0])
+    ?`${col} ферзеву туру`
+    :`${col} королеву туру`;
+}
+
+// Knight label: specify queenside/kingside when both alive
+function knightLabel(p){
+  const kts=pieces().filter(k=>k.type==='n'&&k.color===p.color);
+  const col=p.color==='w'?'білий':'чорний';
+  if(kts.length<=1) return `${col} кінь`;
+  return 'abcd'.includes(p.sq[0])
+    ?`${col} ферзевий кінь`
+    :`${col} королівський кінь`;
+}
+function knightLabelAcc(p){
+  const kts=pieces().filter(k=>k.type==='n'&&k.color===p.color);
+  const col=p.color==='w'?'білого':'чорного';
+  if(kts.length<=1) return `${col} коня`;
+  return 'abcd'.includes(p.sq[0])
+    ?`${col} ферзевого коня`
+    :`${col} королівського коня`;
+}
+
+// Precise label for any piece
+function preciseLabel(p){
+  if(p.type==='b') return bishopLabel(p);
+  if(p.type==='r') return rookLabel(p);
+  if(p.type==='n') return knightLabel(p);
+  return pname(p.type,p.color);
+}
+function preciseLabelAcc(p){
+  if(p.type==='b') return bishopLabelAcc(p);
+  if(p.type==='r') return rookLabelAcc(p);
+  if(p.type==='n') return knightLabelAcc(p);
+  return pnameAcc(p.type,p.color);
+}
+
+// ── helper: get all pieces from board ──
+function pieces(){
+  const board=S.chess.board();
+  const arr=[];
+  for(let r=0;r<8;r++) for(let c=0;c<8;c++){
+    const p=board[r][c];
+    if(p) arr.push({...p,sq:FILES[c]+RANKS[r]});
+  }
+  return arr;
+}
+
+// ── piece display name (Ukrainian) ──
+function pname(type,color){
+  const n=PIECE_UA[type]||type;
+  const fem=FEM[type];
+  const a=color==='w'?(fem?'Біла':'Білий'):(fem?'Чорна':'Чорний');
+  return `${a} ${n.toLowerCase()}`;
+}
+function pnameAcc(type,color){
+  return pname(type,color).toLowerCase();
+}
+// genitive: "атаку на пішака", "захист тури"
+function pnameGen(type,color){
+  const gen={k:'короля',q:'ферзя',r:'тури',b:'слона',n:'коня',p:'пішака'};
+  const fem=FEM[type];
+  const a=color==='w'?(fem?'білої':'білого'):(fem?'чорної':'чорного');
+  return `${a} ${gen[type]||type}`;
+}
+
+// ── attack helpers ──
+// Returns true if `color` has ANY piece that attacks `sq`
+function attackedBy(sq,color){
+  const fen=S.chess.fen();
+  const parts=fen.split(' ');
+  parts[1]=color;
+  parts[3]='-'; // clear en passant to avoid illegal state
+  try{
+    const tmp=new Chess(parts.join(' '));
+    return tmp.moves({verbose:true}).some(m=>m.to===sq);
+  }catch(e){return false;}
+}
+
+// Count how many of `color`'s pieces attack `sq`
+function attackCount(sq,color){
+  const fen=S.chess.fen();
+  const parts=fen.split(' ');
+  parts[1]=color;
+  parts[3]='-';
+  try{
+    const tmp=new Chess(parts.join(' '));
+    // Each legal move to sq might be from a different piece; count unique from-squares
+    const froms=new Set(
+      tmp.moves({verbose:true}).filter(m=>m.to===sq).map(m=>m.from)
+    );
+    return froms.size;
+  }catch(e){return 0;}
+}
+
+// ── structure helpers ──
+// Is file `f` (0-7 index) open — no pawns of either color?
+function fileOpen(fIdx){
+  const board=S.chess.board();
+  return ![0,1,2,3,4,5,6,7].some(r=>{const p=board[r][fIdx];return p&&p.type==='p';});
+}
+// Does `color` have doubled pawns (two+ pawns on same file)?
+function hasDoubledPawns(color){
+  const ps=pieces().filter(p=>p.type==='p'&&p.color===color);
+  const files=ps.map(p=>p.sq[0]);
+  return files.some((f,i)=>files.indexOf(f)!==i);
+}
+// Does `color` have a passed pawn (no enemy pawns blocking/flanking ahead)?
+function hasPassedPawn(color){
+  const ps=pieces();
+  const own=ps.filter(p=>p.type==='p'&&p.color===color);
+  const opp=ps.filter(p=>p.type==='p'&&p.color!==(color==='w'?'b':'w'));
+  return own.some(p=>{
+    const f=FILES.indexOf(p.sq[0]);
+    const rank=parseInt(p.sq[1]);
+    const forward=color==='w'?(r=>r>rank):(r=>r<rank);
+    const adjFiles=[f-1,f,f+1].filter(x=>x>=0&&x<8);
+    return !opp.some(op=>{
+      const of=FILES.indexOf(op.sq[0]);
+      const or=parseInt(op.sq[1]);
+      return adjFiles.includes(of)&&forward(or);
+    });
+  });
+}
+// Square color: true = light, false = dark
+function sqIsLight(sq){
+  const f=FILES.indexOf(sq[0]);
+  const r=parseInt(sq[1])-1;
+  return (f+r)%2===1;
+}
+// Count pieces on kingside (e-h files)
+function kingsideCount(color){
+  return pieces().filter(p=>p.color===color&&'efgh'.includes(p.sq[0])).length;
+}
+// Count captures in history
+function captureCount(){
+  return S.chess.history({verbose:true}).filter(m=>m.captured).length;
+}
+
+// ── COORDINATE questions ──
+function qCoord(){
+  const ps=pieces();
+  if(!ps.length) return null;
+  const moved=movedPieces(); // only pieces that left their start square
+
+  const opts=[
+    // 1. На якій ГОРИЗОНТАЛІ стоїть фігура? (тільки переміщені)
+    ()=>{
+      const pool=moved.filter(p=>p.type!=='p'&&p.type!=='k');
+      if(!pool.length) return null;
+      const p=pool[Math.floor(Math.random()*pool.length)];
+      return{
+        cat:'coord',inputType:'rank',
+        text:`На якій горизонталі стоїть ${preciseLabelAcc(p)}?`,
+        answer:p.sq[1],
+        explain:`${preciseLabel(p)} стоїть на <strong>${p.sq[1]}-й горизонталі</strong> (поле ${p.sq.toUpperCase()})`
+      };
+    },
+    // 2. На якій ЛІНІЇ стоїть фігура? (тільки переміщені)
+    ()=>{
+      const pool=moved.filter(p=>p.type!=='p'&&p.type!=='k');
+      if(!pool.length) return null;
+      const p=pool[Math.floor(Math.random()*pool.length)];
+      return{
+        cat:'coord',inputType:'file',
+        text:`На якій лінії стоїть ${preciseLabelAcc(p)}?`,
+        answer:p.sq[0],
+        explain:`${preciseLabel(p)} стоїть на лінії <strong>«${p.sq[0]}»</strong> (поле ${p.sq.toUpperCase()})`
+      };
+    },
+    // 3. На якому ПОЛІ стоїть фігура? (тільки переміщені — НІКОЛИ "де тура на a8")
+    ()=>{
+      const pool=moved.filter(p=>p.type!=='p'&&p.type!=='k');
+      if(!pool.length) return null;
+      const p=pool[Math.floor(Math.random()*pool.length)];
+      return{
+        cat:'coord',inputType:'square',
+        text:`На якому полі стоїть ${preciseLabelAcc(p)}?`,
+        answer:p.sq,
+        explain:`${preciseLabel(p)} стоїть на полі <strong>${p.sq.toUpperCase()}</strong>`
+      };
+    },
+    // 4. Яка фігура стоїть на конкретному полі? (тільки поля де є переміщені)
+    ()=>{
+      const pool=moved.filter(p=>p.type!=='p');
+      if(!pool.length) return null;
+      const p=pool[Math.floor(Math.random()*pool.length)];
+      return{
+        cat:'coord',inputType:'piece',
+        text:`Яка фігура стоїть на полі ${p.sq.toUpperCase()}?`,
+        answer:p.color+p.type,
+        answerTxt:preciseLabel(p),
+        explain:`На полі <strong>${p.sq.toUpperCase()}</strong> стоїть ${preciseLabel(p).toLowerCase()}`
+      };
+    },
+    // 5. Скільки фігур на лінії X? (тільки лінії з переміщеними фігурами)
+    ()=>{
+      const movedFiles=[...new Set(moved.map(p=>p.sq[0]))];
+      if(!movedFiles.length) return null;
+      const fName=movedFiles[Math.floor(Math.random()*movedFiles.length)];
+      const cnt=ps.filter(p=>p.sq[0]===fName).length;
+      return{
+        cat:'coord',inputType:'number',
+        text:`Скільки фігур стоїть на лінії «${fName}»?`,
+        answer:String(cnt),
+        explain:`На лінії «${fName}» стоїть <strong>${cnt}</strong> ${cnt===1?'фігура':cnt<5?'фігури':'фігур'}`
+      };
+    },
+    // 6. Чи є фігура на центральному полі?
+    ()=>{
+      const central=['d4','d5','e4','e5'];
+      const sq=central[Math.floor(Math.random()*central.length)];
+      const piece=ps.find(p=>p.sq===sq);
+      return{
+        cat:'coord',inputType:'yesno',
+        text:`Чи стоїть якась фігура на полі ${sq.toUpperCase()}?`,
+        answer:piece?'yes':'no',
+        explain:piece
+          ?`Так, на полі <strong>${sq.toUpperCase()}</strong> стоїть ${preciseLabel(piece).toLowerCase()}`
+          :`Ні, поле <strong>${sq.toUpperCase()}</strong> вільне`
+      };
+    },
+    // 7. На якому кольорі поля стоїть слон? (тільки переміщений)
+    ()=>{
+      const bishops=moved.filter(p=>p.type==='b');
+      if(!bishops.length) return null;
+      const b=bishops[Math.floor(Math.random()*bishops.length)];
+      const isLight=sqIsLight(b.sq);
+      return{
+        cat:'coord',inputType:'yesno',
+        text:`Чи стоїть ${bishopLabelAcc(b)} на СВІТЛОМУ полі?`,
+        answer:isLight?'yes':'no',
+        explain:`${bishopLabel(b)} стоїть на полі <strong>${b.sq.toUpperCase()}</strong> — це <strong>${isLight?'світле':'темне'}</strong> поле`
+      };
+    },
+    // 8. Скільки пішаків зайшли на половину суперника?
+    ()=>{
+      const color=Math.random()<0.5?'w':'b';
+      const cn=color==='w'?'білих':'чорних';
+      const adv=color==='w'
+        ?ps.filter(p=>p.type==='p'&&p.color==='w'&&parseInt(p.sq[1])>=5).length
+        :ps.filter(p=>p.type==='p'&&p.color==='b'&&parseInt(p.sq[1])<=4).length;
+      if(adv===0&&Math.random()<0.6) return null; // skip trivial "0 pawns advanced" often
+      return{
+        cat:'coord',inputType:'number',
+        text:`Скільки пішаків ${cn} зайшли на половину суперника?`,
+        answer:String(adv),
+        explain:`<strong>${adv}</strong> пішаків ${cn} знаходяться на половині суперника`
+      };
+    },
+  ];
+  const shuffled=[...opts].sort(()=>Math.random()-0.5);
+  for(const fn of shuffled){try{const q=fn();if(q) return q;}catch(e){}}
+  return null;
+}
+
+// ── THREAT questions (real tactical analysis) ──
+function qThreat(){
+  const ps=pieces();
+  const turn=S.chess.turn();
+  const opp=turn==='w'?'b':'w';
+  const fen=S.chess.fen();
+  const castling=fen.split(' ')[2];
+
+  const opts=[
+    // 1. Чи атакована конкретна фігура?
+    ()=>{
+      const targets=ps.filter(p=>p.type!=='k'&&p.color===turn);
+      if(!targets.length) return null;
+      const p=targets[Math.floor(Math.random()*targets.length)];
+      const attacked=attackedBy(p.sq,opp);
+      return{
+        cat:'threat',inputType:'yesno',
+        text:`Чи нападає суперник на ${preciseLabelAcc(p)} (${p.sq.toUpperCase()})?`,
+        answer:attacked?'yes':'no',
+        explain:attacked
+          ?`Так, ${preciseLabel(p).toLowerCase()} на <strong>${p.sq.toUpperCase()}</strong> перебуває під атакою`
+          :`Ні, ${preciseLabel(p).toLowerCase()} на <strong>${p.sq.toUpperCase()}</strong> не атакований`
+      };
+    },
+    // 2. Скільки фігур нападає на поле X?
+    ()=>{
+      const noPawns=ps.filter(p=>p.type!=='p'&&p.type!=='k');
+      if(!noPawns.length) return null;
+      const p=noPawns[Math.floor(Math.random()*noPawns.length)];
+      const cnt=attackCount(p.sq,opp);
+      return{
+        cat:'threat',inputType:'number',
+        text:`Скільки фігур суперника нападає на поле ${p.sq.toUpperCase()}?`,
+        answer:String(cnt),
+        explain:`На поле <strong>${p.sq.toUpperCase()}</strong> нападає <strong>${cnt}</strong> фігур суперника`
+      };
+    },
+    // 3. Чи захищена фігура власними силами?
+    ()=>{
+      const targets=ps.filter(p=>p.type!=='k'&&p.color===turn);
+      if(!targets.length) return null;
+      const p=targets[Math.floor(Math.random()*targets.length)];
+      const defended=attackedBy(p.sq,turn);
+      return{
+        cat:'threat',inputType:'yesno',
+        text:`Чи захищена власними фігурами ${preciseLabelAcc(p)} на ${p.sq.toUpperCase()}?`,
+        answer:defended?'yes':'no',
+        explain:defended
+          ?`Так, ${preciseLabel(p).toLowerCase()} на <strong>${p.sq.toUpperCase()}</strong> <strong>захищена</strong>`
+          :`Ні, ${preciseLabel(p).toLowerCase()} на <strong>${p.sq.toUpperCase()}</strong> <strong>незахищена</strong> — вісяча!`
+      };
+    },
+    // 4. Чи під шахом король?
+    ()=>{
+      const inCheck=S.chess.in_check();
+      const cn=turn==='w'?'білий':'чорний';
+      return{
+        cat:'threat',inputType:'yesno',
+        text:`Чи стоїть ${cn} король під шахом?`,
+        answer:inCheck?'yes':'no',
+        explain:inCheck
+          ?`Так, <strong>${cn} король під шахом</strong>`
+          :`Ні, ${cn} король у безпеці`
+      };
+    },
+    // 5. Чи є прохідний пішак?
+    ()=>{
+      const color=Math.random()<0.5?'w':'b';
+      const cn=color==='w'?'білих':'чорних';
+      const has=hasPassedPawn(color);
+      return{
+        cat:'threat',inputType:'yesno',
+        text:`Чи є прохідний пішак у ${cn}?`,
+        answer:has?'yes':'no',
+        explain:has
+          ?`Так, у ${cn} є <strong>прохідний пішак</strong> — дорогу ніщо не блокує`
+          :`Ні, у ${cn} немає прохідного пішака`
+      };
+    },
+    // 6. Чи є подвоєні пішаки?
+    ()=>{
+      const color=Math.random()<0.5?'w':'b';
+      const cn=color==='w'?'білих':'чорних';
+      const has=hasDoubledPawns(color);
+      return{
+        cat:'threat',inputType:'yesno',
+        text:`Чи є подвоєні пішаки у ${cn}?`,
+        answer:has?'yes':'no',
+        explain:has
+          ?`Так, у ${cn} є <strong>подвоєні пішаки</strong> на одній лінії`
+          :`Ні, у ${cn} немає подвоєних пішаків`
+      };
+    },
+    // 7. Права рокіровки
+    ()=>{
+      const color=Math.random()<0.5?'w':'b';
+      const key=color==='w'?'K':'k';
+      const has=castling.includes(key);
+      const cn=color==='w'?'білих':'чорних';
+      return{
+        cat:'threat',inputType:'yesno',
+        text:`Чи збережено право на коротку рокіровку у ${cn}?`,
+        answer:has?'yes':'no',
+        explain:has
+          ?`Так, <strong>право на коротку рокіровку у ${cn} збережено</strong>`
+          :`Ні, право на коротку рокіровку у ${cn} <strong>втрачено</strong>`
+      };
+    },
+    // 8. Чи безпечне поле f7/f2?
+    ()=>{
+      const weakSq=turn==='w'?'f2':'f7';
+      const cnt=attackCount(weakSq,opp);
+      return{
+        cat:'threat',inputType:'number',
+        text:`Скільки фігур суперника атакує поле ${weakSq.toUpperCase()}?`,
+        answer:String(cnt),
+        explain:`На уразливе поле <strong>${weakSq.toUpperCase()}</strong> нападає <strong>${cnt}</strong> фігур суперника`
+      };
+    },
+  ];
+  const shuffled=[...opts].sort(()=>Math.random()-0.5);
+  for(const fn of shuffled){try{const q=fn();if(q) return q;}catch(e){}}
+  return qCoord();
+}
+
+// ── DYNAMIC questions (structure, history, pawn play) ──
+function qDynamic(){
+  const hist=S.chess.history({verbose:true});
+  if(!hist.length) return qCoord();
+  const last=hist[hist.length-1];
+  const board=S.chess.board();
+
+  const opts=[
+    // 1. Яка фігура зробила останній хід?
+    ()=>({
+      cat:'dynamic',inputType:'piece',
+      text:`Яка фігура зробила останній хід?`,
+      answer:last.color+last.piece,
+      answerTxt:pname(last.piece,last.color),
+      explain:`Останній хід зробив ${pname(last.piece,last.color).toLowerCase()} — <strong>${last.san}</strong> (з ${last.from.toUpperCase()} на ${last.to.toUpperCase()})`
+    }),
+    // 2. Чи був останній хід взяттям?
+    ()=>({
+      cat:'dynamic',inputType:'yesno',
+      text:`Чи був останній хід (${last.san}) взяттям?`,
+      answer:last.captured?'yes':'no',
+      explain:last.captured
+        ?`Так, ход <strong>${last.san}</strong> — це <strong>взяття</strong> ${pnameGen(last.captured,last.color==='w'?'b':'w')}`
+        :`Ні, хід <strong>${last.san}</strong> — це звичайний хід без взяття`
+    }),
+    // 3. Звідки пішла остання фігура?
+    ()=>({
+      cat:'dynamic',inputType:'square',
+      text:`З якого поля зробила хід остання фігура (${PIECE_UA[last.piece]||last.piece}, ${last.san})?`,
+      answer:last.from,
+      explain:`${pname(last.piece,last.color)} перейшла з <strong>${last.from.toUpperCase()}</strong> на <strong>${last.to.toUpperCase()}</strong>`
+    }),
+    // 4. Скільки взять було в партії?
+    ()=>{
+      const caps=captureCount();
+      // cap answer at 9 for numGrid
+      if(caps>9) return null;
+      return{
+        cat:'dynamic',inputType:'number',
+        text:`Скільки взять (загалом) відбулось у цій партії?`,
+        answer:String(caps),
+        explain:`У партії відбулось <strong>${caps}</strong> взять`
+      };
+    },
+    // 5. Яка сторона зробила більше ходів пішаками?
+    ()=>{
+      const wPawnMoves=hist.filter(m=>m.piece==='p'&&m.color==='w').length;
+      const bPawnMoves=hist.filter(m=>m.piece==='p'&&m.color==='b').length;
+      if(wPawnMoves===bPawnMoves) return null;
+      return{
+        cat:'dynamic',inputType:'yesno',
+        yesLabel:'⬜ Білі',noLabel:'⬛ Чорні',
+        text:`Хто зробив більше ходів пішаками — білі чи чорні?`,
+        answer:wPawnMoves>bPawnMoves?'yes':'no',
+        explain:`Білі зробили ходів пішаками: <strong>${wPawnMoves}</strong>, чорні: <strong>${bPawnMoves}</strong>`
+      };
+    },
+    // 6. Чи відкрита конкретна лінія?
+    ()=>{
+      const fIdx=Math.floor(Math.random()*8);
+      const fName=FILES[fIdx];
+      const open=fileOpen(fIdx);
+      return{
+        cat:'dynamic',inputType:'yesno',
+        text:`Чи відкрита лінія «${fName}» (немає жодного пішака)?`,
+        answer:open?'yes':'no',
+        explain:open
+          ?`Так, лінія «${fName}» <strong>відкрита</strong> — пішаків немає`
+          :`Ні, лінія «${fName}» <strong>закрита</strong> пішаком(ами)`
+      };
+    },
+    // 7. Яка сторона більше фігур тримає на королівському фланзі?
+    ()=>{
+      const wK=kingsideCount('w');
+      const bK=kingsideCount('b');
+      if(wK===bK) return null;
+      return{
+        cat:'dynamic',inputType:'yesno',
+        yesLabel:'⬜ Білі',noLabel:'⬛ Чорні',
+        text:`Хто тримає більше фігур на королівському фланзі (лінії e–h)?`,
+        answer:wK>bK?'yes':'no',
+        explain:`На королівському фланзі: білих — <strong>${wK}</strong>, чорних — <strong>${bK}</strong>`
+      };
+    },
+    // 8. Чи є пішак на 7-й (для білих) або 2-й (для чорних) горизонталі — загроза перетворення?
+    ()=>{
+      const ps=pieces();
+      const w7=ps.filter(p=>p.type==='p'&&p.color==='w'&&p.sq[1]==='7').length;
+      const b2=ps.filter(p=>p.type==='p'&&p.color==='b'&&p.sq[1]==='2').length;
+      const any=(w7+b2)>0;
+      return{
+        cat:'dynamic',inputType:'yesno',
+        text:`Чи є пішак на передостанній горизонталі (загроза перетворення)?`,
+        answer:any?'yes':'no',
+        explain:any
+          ?`Так! Пішаки перед перетворенням: ${w7?`білих на 7-й — ${w7}`:''}${w7&&b2?', ':''}${b2?`чорних на 2-й — ${b2}`:''}`
+          :`Ні, жоден пішак поки не загрожує перетворенням`
+      };
+    },
+  ];
+  const shuffled=[...opts].sort(()=>Math.random()-0.5);
+  for(const fn of shuffled){try{const q=fn();if(q) return q;}catch(e){}}
+  return qCoord();
+}
+
+// ╔══════════════════════════════════════════════╗
+// ║  QUESTION UI                                 ║
+// ╚══════════════════════════════════════════════╝
+function renderQuestion(q){
+  const full=Math.floor(S.idx/2);
+  document.getElementById('qMeta').textContent=`ПІСЛЯ ${S.idx} НАПІВХОДІВ (${full} ПОВНИХ)`;
+  document.getElementById('qCat').textContent=CAT_UA[q.cat]||q.cat.toUpperCase();
+  document.getElementById('qText').textContent=q.text;
+  S.answer=null;
+
+  ['iSquare','iPiece','iYN','iNum','iFile','iRank'].forEach(id=>document.getElementById(id).style.display='none');
+
+  if(q.inputType==='square'){
+    buildBlindGrid();
+    document.getElementById('iSquare').style.display='block';
+  }else if(q.inputType==='piece'){
+    buildPieceGrid();
+    document.getElementById('iPiece').style.display='block';
+  }else if(q.inputType==='yesno'){
+    setupYN(q);
+    document.getElementById('iYN').style.display='block';
+  }else if(q.inputType==='number'){
+    buildNumGrid();
+    document.getElementById('iNum').style.display='block';
+  }else if(q.inputType==='file'){
+    buildFileGrid();
+    document.getElementById('iFile').style.display='block';
+  }else if(q.inputType==='rank'){
+    buildRankGrid();
+    document.getElementById('iRank').style.display='block';
+  }
+}
+
+function buildBlindGrid(){
+  const g=document.getElementById('blindGrid');
+  g.innerHTML='';
+  for(let r=0;r<8;r++) for(let c=0;c<8;c++){
+    const sq=FILES[c]+RANKS[r];
+    const cell=document.createElement('div');
+    cell.className='bl-cell';cell.textContent=sq;
+    cell.onclick=()=>{
+      document.querySelectorAll('.bl-cell').forEach(x=>x.classList.remove('sel'));
+      cell.classList.add('sel');S.answer=sq;
+    };
+    g.appendChild(cell);
+  }
+}
+
+function buildPieceGrid(){
+  const g=document.getElementById('pieceGrid');
+  g.innerHTML='';
+  const list=[
+    {k:'wp',g:UNICODE.wp,l:'Білий пішак'},
+    {k:'wn',g:UNICODE.wn,l:'Білий кінь'},
+    {k:'wb',g:UNICODE.wb,l:'Білий слон'},
+    {k:'wr',g:UNICODE.wr,l:'Біла тура'},
+    {k:'wq',g:UNICODE.wq,l:'Білий ферзь'},
+    {k:'wk',g:UNICODE.wk,l:'Білий кор.'},
+    {k:'bp',g:UNICODE.bp,l:'Чорний пішак'},
+    {k:'bn',g:UNICODE.bn,l:'Чорний кінь'},
+    {k:'bb',g:UNICODE.bb,l:'Чорний слон'},
+    {k:'br',g:UNICODE.br,l:'Чорна тура'},
+    {k:'bq',g:UNICODE.bq,l:'Чорний ферзь'},
+    {k:'bk',g:UNICODE.bk,l:'Чорний кор.'},
+  ];
+  list.forEach(p=>{
+    const btn=document.createElement('div');
+    btn.className='p-btn';
+    btn.innerHTML=`<div class="p-glyph">${p.g}</div><div class="p-label">${p.l}</div>`;
+    btn.onclick=()=>{
+      document.querySelectorAll('.p-btn').forEach(x=>x.classList.remove('sel'));
+      btn.classList.add('sel');S.answer=p.k;
+    };
+    g.appendChild(btn);
+  });
+}
+
+function setupYN(q){
+  document.getElementById('ynYes').textContent=q.yesLabel||'✅ Так';
+  document.getElementById('ynNo').textContent=q.noLabel||'❌ Ні';
+  document.getElementById('ynYes').className='yn-btn yes';
+  document.getElementById('ynNo').className='yn-btn no';
+}
+function pickYN(v){
+  S.answer=v;
+  document.getElementById('ynYes').className='yn-btn yes'+(v==='yes'?' sel':'');
+  document.getElementById('ynNo').className='yn-btn no'+(v==='no'?' sel':'');
+}
+
+function buildNumGrid(){
+  const g=document.getElementById('numGrid');
+  g.innerHTML='';
+  for(let n=0;n<=9;n++){
+    const cell=document.createElement('div');
+    cell.className='num-cell';cell.textContent=n;
+    cell.onclick=()=>{
+      document.querySelectorAll('.num-cell').forEach(x=>x.classList.remove('sel'));
+      cell.classList.add('sel');S.answer=String(n);
+    };
+    g.appendChild(cell);
+  }
+}
+
+function buildFileGrid(){
+  const g=document.getElementById('fileGrid');
+  g.innerHTML='';
+  FILES.forEach(f=>{
+    const cell=document.createElement('div');
+    cell.className='file-cell';cell.textContent=f;
+    cell.onclick=()=>{
+      document.querySelectorAll('.file-cell').forEach(x=>x.classList.remove('sel'));
+      cell.classList.add('sel');S.answer=f;
+    };
+    g.appendChild(cell);
+  });
+}
+
+function buildRankGrid(){
+  const g=document.getElementById('rankGrid');
+  g.innerHTML='';
+  for(let n=1;n<=8;n++){
+    const cell=document.createElement('div');
+    cell.className='rank-cell';cell.textContent=n;
+    cell.onclick=()=>{
+      document.querySelectorAll('.rank-cell').forEach(x=>x.classList.remove('sel'));
+      cell.classList.add('sel');S.answer=String(n);
+    };
+    g.appendChild(cell);
+  }
+}
+
+// ╔══════════════════════════════════════════════╗
+// ║  ANSWER & FEEDBACK                           ║
+// ╚══════════════════════════════════════════════╝
+function submitAnswer(){
+  if(!S.answer){notif('Оберіть відповідь!');return}
+  const q=S.question;
+  const ok=S.answer===q.answer;
+
+  if(ok){S.sess.c++}else{S.sess.w++}
+  S.sess.depth=Math.max(S.sess.depth,S.idx);
+  updateScoreBadge();
+  persistAnswer(ok,q.cat); // async — non-blocking
+
+  document.getElementById('fbIcon').textContent=ok?'🎯':'❌';
+  document.getElementById('fbTitle').textContent=ok?'Правильно!':'Хибно!';
+  document.getElementById('fbTitle').className='fb-title '+(ok?'ok':'bad');
+
+  // infinite mode: wrong answer ends session
+  const infiniteFail=S.mode==='infinite'&&!ok;
+  if(infiniteFail) S.afterQueue='gameover';
+
+  const moreQ=S.questionQIdx<S.questionQueue.length-1&&!infiniteFail;
+  const nextLabel=moreQ?`Питання ${S.questionQIdx+2} ▶`:'Продовжити ▶';
+
+  document.getElementById('fbDetail').innerHTML=`
+    <div>${q.explain}</div>
+    <div class="fb-score">✅ ${S.sess.c} правильних · ❌ ${S.sess.w} хибних</div>
+  `;
+
+  // Update continue button label
+  document.getElementById('fbContinueBtn').textContent=nextLabel;
+
+  speak(ok?'Правильно!':`Хибно. ${q.explain.replace(/<[^>]+>/g,'')}`);
+  show('sFeedback');
+}
+
+function doReveal(){renderBoard();show('sReveal')}
+
+function doAfterReveal(){_afterFeedback()}
+
+function doContinue(){_afterFeedback()}
+
+function _afterFeedback(){
+  const infiniteFail=S.mode==='infinite'&&S.afterQueue==='gameover';
+  const moreQ=S.questionQIdx<S.questionQueue.length-1&&!infiniteFail;
+  if(moreQ){
+    S.questionQIdx++;
+    showCurrentQuestion();
+    return;
+  }
+  // all queue done
+  if(S.afterQueue==='gameover'){
+    if(S.isGroup) showParticipantScore();
+    else showGameOver();
+  }else{
+    show('sDictation');
+  }
+}
+
+// ╔══════════════════════════════════════════════╗
+// ║  BOARD RENDER                                ║
+// ╚══════════════════════════════════════════════╝
+function renderBoard(){
+  const c=document.getElementById('boardContainer');
+  c.innerHTML='';
+  const board=S.chess.board();
+  const hist=S.chess.history({verbose:true});
+  const last=hist.length?hist[hist.length-1]:null;
+  const hlSet=new Set(last?[last.from,last.to]:[]);
+
+  const outer=document.createElement('div');
+  outer.className='board-outer';
+
+  // top file labels
+  const topRow=document.createElement('div');
+  topRow.className='board-coords-top';
+  topRow.appendChild(document.createElement('div')); // corner
+  FILES.forEach(f=>{
+    const lbl=document.createElement('div');
+    lbl.className='coord';lbl.textContent=f;
+    topRow.appendChild(lbl);
+  });
+  outer.appendChild(topRow);
+
+  for(let r=0;r<8;r++){
+    const row=document.createElement('div');
+    row.className='board-row';
+    const rankLbl=document.createElement('div');
+    rankLbl.className='coord';rankLbl.textContent=RANKS[r];
+    row.appendChild(rankLbl);
+    for(let c2=0;c2<8;c2++){
+      const sq=FILES[c2]+RANKS[r];
+      const light=(r+c2)%2===0;
+      const cell=document.createElement('div');
+      cell.className='sq '+(light?'light':'dark')+(hlSet.has(sq)?' hl':'');
+      const piece=board[r][c2];
+      if(piece){
+        const span=document.createElement('span');
+        span.textContent=UNICODE[piece.color+piece.type]||'';
+        span.className=piece.color==='w'?'piece-w':'piece-b';
+        cell.appendChild(span);
+      }
+      row.appendChild(cell);
+    }
+    outer.appendChild(row);
+  }
+  c.appendChild(outer);
+
+  // move list
+  const moves=S.chess.history();
+  const pairs=[];
+  for(let i=0;i<moves.length;i+=2)
+    pairs.push(`${i/2+1}.${moves[i]}${moves[i+1]?' '+moves[i+1]:''}`);
+  document.getElementById('revMoves').textContent=pairs.join('  ');
+  document.getElementById('revLabel').textContent=`Позиція після ${S.idx} напівходів`;
+}
+
+// ╔══════════════════════════════════════════════╗
+// ║  GAME OVER                                   ║
+// ╚══════════════════════════════════════════════╝
+function showGameOver(){
+  if(S.isGroup){showParticipantScore();return;}
+  const {c,w,depth}=S.sess;
+  const tot=c+w;
+  const pct=tot>0?Math.round(c/tot*100):0;
+
+  document.getElementById('goCrown').textContent=pct>=80?'🏆':pct>=50?'⚔️':'📚';
+  document.getElementById('goTitle').textContent=
+    S.mode==='infinite'?'Кінець серії':'Тренування завершено';
+  document.getElementById('goSub').textContent=
+    pct>=80?'Відмінна робота!':pct>=50?'Хороший результат!':'Продовжуй тренуватися!';
+
+  document.getElementById('goStats').innerHTML=`
+    <div class="go-stat"><div class="go-val">${pct}%</div><div class="go-lbl">Точність</div></div>
+    <div class="go-stat"><div class="go-val">${depth}</div><div class="go-lbl">Глибина</div></div>
+    <div class="go-stat"><div class="go-val">${c}</div><div class="go-lbl">Правильних</div></div>
+    <div class="go-stat"><div class="go-val">${w}</div><div class="go-lbl">Хибних</div></div>
+  `;
+  speak(`Тренування завершено. Точність ${pct} відсотків.`);
+  persistSession(currentPlayerName(), S.sess, S.mode);
+  show('sGameOver');
+}
+
+// ╔══════════════════════════════════════════════╗
+// ║  FIREBASE CONFIG                             ║
+// ║  ▼▼▼ Вставте свій конфіг нижче ▼▼▼          ║
+// ╚══════════════════════════════════════════════╝
+const FIREBASE_CONFIG = {
+  apiKey:            "AIzaSyBCqbuFdnw2Z7DeKehXhiMHPw0UvCR2FRE",
+  authDomain:        "blindfold-vision.firebaseapp.com",
+  projectId:         "blindfold-vision",
+  storageBucket:     "blindfold-vision.firebasestorage.app",
+  messagingSenderId: "52528983553",
+  appId:             "1:52528983553:web:a3bc460e629326a23c5a00",
+  databaseURL:       "https://blindfold-vision-default-rtdb.europe-west1.firebasedatabase.app",
+};
+// ▲▲▲ Кінець конфігу ▲▲▲
+
+// Firebase path prefix
+const FB_ROOT = 'blindfold';
+
+let fbDB = null; // Firebase Realtime Database reference
+
+function initFirebase(){
+  try{
+    if(typeof firebase === 'undefined') throw new Error('SDK not loaded');
+    if(FIREBASE_CONFIG.apiKey.startsWith('ВСТАВТЕ')) throw new Error('Config not set');
+    const app = firebase.apps.length
+      ? firebase.apps[0]
+      : firebase.initializeApp(FIREBASE_CONFIG);
+    fbDB = firebase.database(app);
+    setFbStatus('🟢 Firebase підключено');
+    console.log('Firebase OK');
+  }catch(e){
+    fbDB=null;
+    setFbStatus(e.message.includes('not set')
+      ? '⚪ Firebase: вставте конфіг (збереження локально)'
+      : '🔴 Firebase offline — збереження локально');
+    console.warn('Firebase init failed:', e.message);
+  }
+}
+
+function setFbStatus(msg){
+  const el=document.getElementById('fbStatus');
+  if(el) el.textContent=msg;
+}
+
+// Sanitize name for Firebase key (no . # $ [ ] /)
+function playerKey(name){
+  return (name||'Гість').trim()
+    .toLowerCase()
+    .replace(/[.#$[\]/]/g,'_')
+    .replace(/\s+/g,'_')
+    .slice(0,40) || 'guest';
+}
+
+// ── Current player name ──
+function currentPlayerName(){
+  const inp=document.getElementById('soloNameInput');
+  const name=(inp?.value||'').trim();
+  if(name) localStorage.setItem('bv_player',name);
+  return name || localStorage.getItem('bv_player') || 'Гість';
+}
+
+// ── Write one answer to Firebase ──
+async function fbSaveAnswer(playerName, ok, cat, depth){
+  if(!fbDB) return false;
+  try{
+    const key=playerKey(playerName);
+    const ref=fbDB.ref(`${FB_ROOT}/players/${key}`);
+    const snap=await ref.once('value');
+    const cur=snap.val()||{};
+
+    // merge update
+    const total={c:(cur.total?.c||0)+(ok?1:0), w:(cur.total?.w||0)+(!ok?1:0)};
+    const cats={...(cur.cats||{})};
+    cats[cat]={c:(cats[cat]?.c||0)+(ok?1:0), w:(cats[cat]?.w||0)+(!ok?1:0)};
+    const best=Math.max(cur.best||0, depth);
+
+    await ref.update({name:playerName, total, cats, best,
+      lastSeen: new Date().toISOString().slice(0,10)});
+    return true;
+  }catch(e){
+    console.warn('fbSaveAnswer error:', e.message);
+    return false;
+  }
+}
+
+// ── Save full session summary to Firebase ──
+async function fbSaveSession(playerName, sess, mode){
+  if(!fbDB) return;
+  try{
+    const key=playerKey(playerName);
+    const ref=fbDB.ref(`${FB_ROOT}/players/${key}/sessions`);
+    const snap=await ref.once('value');
+    const sessions=Object.values(snap.val()||{});
+    // keep last 20 sessions
+    sessions.push({
+      date:new Date().toISOString().slice(0,10),
+      mode, depth:sess.depth,
+      c:sess.c, w:sess.w,
+      pct:sess.c+sess.w>0?Math.round(sess.c/(sess.c+sess.w)*100):0
+    });
+    const trimmed=sessions.slice(-20);
+    await ref.set(trimmed.reduce((o,s,i)=>{o[i]=s;return o},{}));
+  }catch(e){
+    console.warn('fbSaveSession error:', e.message);
+  }
+}
+
+// ╔══════════════════════════════════════════════╗
+// ║  STATS                                       ║
+// ╚══════════════════════════════════════════════╝
+const STORE='bv_v1';
+
+function loadData(){
+  try{return JSON.parse(localStorage.getItem(STORE)||'{}')}catch(e){return{}}
+}
+function saveData(d){localStorage.setItem(STORE,JSON.stringify(d))}
+
+// persistAnswer — writes to both Firebase AND localStorage
+async function persistAnswer(ok, cat){
+  // 1. localStorage (instant fallback)
+  const d=loadData();
+  d.total=d.total||{c:0,w:0};
+  d.cats=d.cats||{};
+  d.best=d.best||0;
+  if(ok) d.total.c++; else d.total.w++;
+  d.cats[cat]=d.cats[cat]||{c:0,w:0};
+  if(ok) d.cats[cat].c++; else d.cats[cat].w++;
+  d.best=Math.max(d.best, S.sess.depth);
+  saveData(d);
+
+  // 2. Firebase (async, non-blocking)
+  const name = S.isGroup
+    ? S.participants[S.curPIdx]?.name
+    : currentPlayerName();
+  if(name) fbSaveAnswer(name, ok, cat, S.sess.depth);
+}
+
+// Called at end of each session (solo + each participant in group)
+function persistSession(playerName, sess, mode){
+  fbSaveSession(playerName, sess, mode);
+}
+
+// ── Stats screen ──
+async function renderStats(){
+  // Show localStorage stats immediately
+  const d=loadData();
+  const tot=(d.total?.c||0)+(d.total?.w||0);
+  const pct=tot>0?Math.round((d.total?.c||0)/tot*100):0;
+
+  document.getElementById('statsGrid').innerHTML=`
+    <div class="stat-card"><div class="stat-val">${pct}%</div><div class="stat-lbl">Моя точність</div></div>
+    <div class="stat-card"><div class="stat-val">${d.best||0}</div><div class="stat-lbl">Рекорд глибини</div></div>
+    <div class="stat-card"><div class="stat-val">${d.total?.c||0}</div><div class="stat-lbl">Правильних</div></div>
+    <div class="stat-card"><div class="stat-val">${d.total?.w||0}</div><div class="stat-lbl">Хибних</div></div>
+  `;
+
+  const catNames={coord:'📍 Координата',threat:'⚔️ Загроза',dynamic:'🎯 Динаміка'};
+  let catHtml='';
+  for(const [cat,vals] of Object.entries(d.cats||{})){
+    const ct=(vals.c||0)+(vals.w||0);
+    const cp=ct>0?Math.round((vals.c||0)/ct*100):0;
+    catHtml+=`
+      <div class="cat-bar">
+        <div class="cat-bar-header">
+          <span>${catNames[cat]||cat}</span>
+          <span style="color:var(--gold)">${cp}%</span>
+        </div>
+        <div class="cat-bar-track"><div class="cat-bar-fill" style="width:${cp}%"></div></div>
+        <div class="cat-bar-footer">✅ ${vals.c||0} / ❌ ${vals.w||0}</div>
+      </div>`;
+  }
+  document.getElementById('catStats').innerHTML=
+    catHtml||'<p style="color:var(--text3);font-size:13px;text-align:center">Ще немає даних</p>';
+
+  // Try to load all players from Firebase
+  if(!fbDB){
+    document.getElementById('allPlayersSection').style.display='none';
+    return;
+  }
+  document.getElementById('allPlayersSection').style.display='block';
+  document.getElementById('allPlayersList').innerHTML=
+    '<p style="color:var(--text3);font-size:13px;text-align:center">Завантаження…</p>';
+
+  try{
+    const snap=await fbDB.ref(`${FB_ROOT}/players`).once('value');
+    const data=snap.val()||{};
+    const players=Object.values(data).sort((a,b)=>{
+      const pa=a.total?a.total.c/(a.total.c+a.total.w||1):0;
+      const pb=b.total?b.total.c/(b.total.c+b.total.w||1):0;
+      return pb-pa;
+    });
+
+    if(!players.length){
+      document.getElementById('allPlayersList').innerHTML=
+        '<p style="color:var(--text3);font-size:13px;text-align:center">Немає гравців у базі</p>';
+      return;
+    }
+
+    let html='';
+    players.forEach((p,i)=>{
+      const tot=(p.total?.c||0)+(p.total?.w||0);
+      const pct=tot>0?Math.round((p.total?.c||0)/tot*100):0;
+      const medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}`;
+      html+=`
+        <div class="lb-row${i===0?' first':''}">
+          <div class="lb-rank">${medal}</div>
+          <div class="lb-info">
+            <div class="lb-name">${p.name||'?'}</div>
+            <div class="lb-meta">✅ ${p.total?.c||0} · ❌ ${p.total?.w||0} · глибина: ${p.best||0} · ${p.lastSeen||''}</div>
+          </div>
+          <div class="lb-pct">${pct}%</div>
+        </div>`;
+    });
+    document.getElementById('allPlayersList').innerHTML=html;
+  }catch(e){
+    document.getElementById('allPlayersList').innerHTML=
+      '<p style="color:var(--text3);font-size:13px;text-align:center">Помилка завантаження</p>';
+    console.warn('renderStats Firebase error:', e);
+  }
+}
+
+// Init Firebase on page load
+initFirebase();
+
+// Restore saved name
+(function(){
+  const saved=localStorage.getItem('bv_player');
+  if(saved){
+    const inp=document.getElementById('soloNameInput');
+    if(inp) inp.value=saved;
+  }
+})();
+
+// ╔══════════════════════════════════════════════╗
+// ║  TRAINER PANEL                               ║
+// ╚══════════════════════════════════════════════╝
+const TRAINER_PWD = 'debut2025';
+let trainerData = {}; // all players loaded from Firebase
+let trainerCurrentPlayer = null; // player key for detail view
+
+function goTrainerLogin(){
+  document.getElementById('trainerPwdInput').value='';
+  document.getElementById('trainerLoginErr').textContent='';
+  show('sTrainerLogin');
+}
+
+function trainerLogin(){
+  const pwd = document.getElementById('trainerPwdInput').value;
+  if(pwd === TRAINER_PWD){
+    show('sTrainerDashboard');
+    trainerRefresh();
+  } else {
+    document.getElementById('trainerLoginErr').textContent='Невірний пароль';
+    document.getElementById('trainerPwdInput').value='';
+    document.getElementById('trainerPwdInput').focus();
+  }
+}
+
+async function trainerRefresh(){
+  document.getElementById('trainerPlayersList').innerHTML=
+    '<p style="color:var(--text3);font-size:13px;text-align:center;padding:20px">Завантаження…</p>';
+  document.getElementById('trainerSummary').innerHTML='';
+
+  if(!fbDB){
+    document.getElementById('trainerPlayersList').innerHTML=
+      '<p style="color:var(--red);font-size:13px;text-align:center;padding:20px">Firebase не підключено</p>';
+    return;
+  }
+
+  try{
+    const snap = await fbDB.ref(`${FB_ROOT}/players`).once('value');
+    trainerData = snap.val() || {};
+    renderTrainerSummary();
+    trainerFilterRender();
+  }catch(e){
+    document.getElementById('trainerPlayersList').innerHTML=
+      `<p style="color:var(--red);font-size:13px;text-align:center;padding:20px">Помилка: ${e.message}</p>`;
+  }
+}
+
+function renderTrainerSummary(){
+  const players = Object.values(trainerData);
+  const total   = players.length;
+  const allC    = players.reduce((s,p)=>s+(p.total?.c||0),0);
+  const allW    = players.reduce((s,p)=>s+(p.total?.w||0),0);
+  const avgPct  = allC+allW>0 ? Math.round(allC/(allC+allW)*100) : 0;
+  const maxDepth= players.reduce((m,p)=>Math.max(m,p.best||0),0);
+  const today   = new Date().toISOString().slice(0,10);
+  const active  = players.filter(p=>p.lastSeen===today).length;
+
+  document.getElementById('trainerSummary').innerHTML=`
+    <div class="stat-card"><div class="stat-val">${total}</div><div class="stat-lbl">Учнів</div></div>
+    <div class="stat-card"><div class="stat-val">${avgPct}%</div><div class="stat-lbl">Сер. точність</div></div>
+    <div class="stat-card"><div class="stat-val">${maxDepth}</div><div class="stat-lbl">Рекорд глибини</div></div>
+    <div class="stat-card"><div class="stat-val">${active}</div><div class="stat-lbl">Сьогодні активних</div></div>
+  `;
+}
+
+function trainerFilterRender(){
+  const q     = (document.getElementById('trainerSearch').value||'').toLowerCase();
+  const sort  = document.getElementById('trainerSort').value;
+
+  let players = Object.entries(trainerData).map(([key,p])=>({key,...p}));
+
+  // filter
+  if(q) players = players.filter(p=>(p.name||'').toLowerCase().includes(q));
+
+  // sort
+  players.sort((a,b)=>{
+    if(sort==='pct'){
+      const pa=a.total?a.total.c/(a.total.c+a.total.w||1):0;
+      const pb=b.total?b.total.c/(b.total.c+b.total.w||1):0;
+      return pb-pa;
+    }
+    if(sort==='best')   return (b.best||0)-(a.best||0);
+    if(sort==='total')  return ((b.total?.c||0)+(b.total?.w||0))-((a.total?.c||0)+(a.total?.w||0));
+    if(sort==='name')   return (a.name||'').localeCompare(b.name||'');
+    if(sort==='date')   return (b.lastSeen||'').localeCompare(a.lastSeen||'');
+    return 0;
+  });
+
+  if(!players.length){
+    document.getElementById('trainerPlayersList').innerHTML=
+      '<p style="color:var(--text3);font-size:13px;text-align:center;padding:20px">Нічого не знайдено</p>';
+    return;
+  }
+
+  const catNames={coord:'Коорд.',threat:'Загроза',dynamic:'Динаміка'};
+  let html='';
+  players.forEach((p,i)=>{
+    const tot = (p.total?.c||0)+(p.total?.w||0);
+    const pct = tot>0 ? Math.round((p.total?.c||0)/tot*100) : 0;
+    const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}`;
+
+    // category mini-bars
+    const catHtml = Object.entries(p.cats||{}).map(([cat,v])=>{
+      const ct=(v.c||0)+(v.w||0);
+      const cp=ct>0?Math.round((v.c||0)/ct*100):0;
+      return `<span style="font-size:10px;color:var(--text3)">${catNames[cat]||cat}: <span style="color:var(--gold)">${cp}%</span></span>`;
+    }).join(' · ');
+
+    html+=`
+      <div class="trainer-row" onclick="trainerShowPlayer('${p.key}')">
+        <div class="tr-rank">${medal}</div>
+        <div class="tr-info">
+          <div class="tr-name">${p.name||'?'}</div>
+          <div class="tr-meta">✅${p.total?.c||0} ❌${p.total?.w||0} · глиб.${p.best||0} · ${p.lastSeen||'—'}</div>
+          <div class="tr-bar"><div class="tr-bar-fill" style="width:${pct}%"></div></div>
+          <div style="margin-top:4px">${catHtml}</div>
+        </div>
+        <div class="tr-pct">${pct}%</div>
+      </div>`;
+  });
+  document.getElementById('trainerPlayersList').innerHTML=html;
+}
+
+function trainerShowPlayer(key){
+  const p = trainerData[key];
+  if(!p) return;
+  trainerCurrentPlayer = key;
+
+  document.getElementById('tpName').textContent=p.name||'?';
+
+  const tot=(p.total?.c||0)+(p.total?.w||0);
+  const pct=tot>0?Math.round((p.total?.c||0)/tot*100):0;
+  document.getElementById('tpSummary').innerHTML=`
+    <div class="stat-card"><div class="stat-val">${pct}%</div><div class="stat-lbl">Точність</div></div>
+    <div class="stat-card"><div class="stat-val">${p.best||0}</div><div class="stat-lbl">Рекорд глибини</div></div>
+    <div class="stat-card"><div class="stat-val">${p.total?.c||0}</div><div class="stat-lbl">Правильних</div></div>
+    <div class="stat-card"><div class="stat-val">${p.total?.w||0}</div><div class="stat-lbl">Хибних</div></div>
+  `;
+
+  const catNames={coord:'📍 Координата',threat:'⚔️ Загроза',dynamic:'🎯 Динаміка'};
+  let catHtml='';
+  for(const [cat,vals] of Object.entries(p.cats||{})){
+    const ct=(vals.c||0)+(vals.w||0);
+    const cp=ct>0?Math.round((vals.c||0)/ct*100):0;
+    catHtml+=`
+      <div class="cat-bar">
+        <div class="cat-bar-header">
+          <span>${catNames[cat]||cat}</span>
+          <span style="color:var(--gold)">${cp}%</span>
+        </div>
+        <div class="cat-bar-track"><div class="cat-bar-fill" style="width:${cp}%"></div></div>
+        <div class="cat-bar-footer">✅ ${vals.c||0} / ❌ ${vals.w||0}</div>
+      </div>`;
+  }
+  document.getElementById('tpCats').innerHTML=catHtml||'<p style="color:var(--text3);font-size:13px">Немає даних по категоріях</p>';
+
+  // Sessions — newest first
+  const sessions = Object.values(p.sessions||{}).reverse();
+  const modeUA={novice:'Новачок',amateur:'Аматор',pro:'Профі',infinite:'Нескінченна'};
+  let sessHtml='';
+  if(!sessions.length){
+    sessHtml='<p style="color:var(--text3);font-size:13px">Немає сесій</p>';
+  } else {
+    sessions.slice(0,20).forEach(s=>{
+      sessHtml+=`
+        <div class="sess-row">
+          <span class="sess-date">${s.date||'—'}</span>
+          <span class="sess-mode">${modeUA[s.mode]||s.mode||'—'}</span>
+          <span class="sess-depth">↓${s.depth||0}</span>
+          <span style="color:var(--text2)">✅${s.c||0} ❌${s.w||0}</span>
+          <span class="sess-pct">${s.pct||0}%</span>
+        </div>`;
+    });
+  }
+  document.getElementById('tpSessions').innerHTML=sessHtml;
+  show('sTrainerPlayer');
+}
+
+// ── Excel export: all players ──
+function exportExcel(){
+  if(!Object.keys(trainerData).length){
+    notif('Немає даних для експорту');return;
+  }
+
+  const modeUA={novice:'Новачок',amateur:'Аматор',pro:'Профі',infinite:'Нескінченна'};
+
+  // Sheet 1: Summary
+  const summary = Object.values(trainerData).map(p=>{
+    const tot=(p.total?.c||0)+(p.total?.w||0);
+    const pct=tot>0?Math.round((p.total?.c||0)/tot*100):0;
+    return {
+      "Ім'я":               p.name||'?',
+      "Точність %":         pct,
+      "Правильних":         p.total?.c||0,
+      "Хибних":             p.total?.w||0,
+      "Всього відповідей":  tot,
+      "Рекорд глибини":     p.best||0,
+      "Координата %":       catPct(p,'coord'),
+      "Загроза %":          catPct(p,'threat'),
+      "Динаміка %":         catPct(p,'dynamic'),
+      "Остання дата":       p.lastSeen||'—',
+    };
+  }).sort((a,b)=>b["Точність %"]-a["Точність %"]);
+
+  // Sheet 2: All sessions
+  const allSessions=[];
+  Object.values(trainerData).forEach(p=>{
+    Object.values(p.sessions||{}).forEach(s=>{
+      allSessions.push({
+        "Ім'я":       p.name||'?',
+        "Дата":       s.date||'—',
+        "Режим":      modeUA[s.mode]||s.mode||'—',
+        "Глибина":    s.depth||0,
+        "Правильних": s.c||0,
+        "Хибних":     s.w||0,
+        "Точність %": s.pct||0,
+      });
+    });
+  });
+  allSessions.sort((a,b)=>b["Дата"].localeCompare(a["Дата"]));
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary),   'Учні');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(allSessions),'Сесії');
+
+  const date = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `blindfold-vision_${date}.xlsx`);
+  notif('Excel збережено ✅');
+}
+
+// ── Excel export: single player ──
+function exportPlayerExcel(){
+  const key = trainerCurrentPlayer;
+  if(!key || !trainerData[key]){ notif('Немає даних'); return; }
+  const p = trainerData[key];
+  const modeUA={novice:'Новачок',amateur:'Аматор',pro:'Профі',infinite:'Нескінченна'};
+
+  // Summary row
+  const tot=(p.total?.c||0)+(p.total?.w||0);
+  const pct=tot>0?Math.round((p.total?.c||0)/tot*100):0;
+  const summaryRows=[{
+    "Ім'я":p.name||'?',"Точність %":pct,
+    "Правильних":p.total?.c||0,"Хибних":p.total?.w||0,
+    "Рекорд глибини":p.best||0,
+    "Координата %":catPct(p,'coord'),
+    "Загроза %":catPct(p,'threat'),
+    "Динаміка %":catPct(p,'dynamic'),
+  }];
+
+  // Sessions
+  const sessions = Object.values(p.sessions||{})
+    .sort((a,b)=>(b.date||'').localeCompare(a.date||''))
+    .map(s=>({
+      "Дата":s.date||'—',
+      "Режим":modeUA[s.mode]||s.mode||'—',
+      "Глибина":s.depth||0,
+      "Правильних":s.c||0,
+      "Хибних":s.w||0,
+      "Точність %":s.pct||0,
+    }));
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows),'Загальне');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sessions.length?sessions:[{}]),'Сесії');
+
+  const safeName=(p.name||'player').replace(/[^\wа-яА-ЯіІєЄїЇ]/g,'_');
+  XLSX.writeFile(wb, `${safeName}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  notif('Excel збережено ✅');
+}
+
+function catPct(p, cat){
+  const v=p.cats?.[cat];
+  if(!v) return 0;
+  const t=(v.c||0)+(v.w||0);
+  return t>0?Math.round((v.c||0)/t*100):0;
+}
+
+</script>
+</body>
+</html>
