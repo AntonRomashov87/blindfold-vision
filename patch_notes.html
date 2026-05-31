@@ -1,0 +1,135 @@
+<!-- ================================================================
+  BLINDFOLD VISION — PATCH NOTES
+  Застосуйте ці зміни до свого blindfold_vision.html
+  або запустіть: python3 apply_patches.py blindfold_vision.html
+================================================================ -->
+
+<!-- ═══════════════════════════════════════════════════════════════
+  ЗМІНА 1: ЛОГОТИП замість пішака
+  Знайдіть у HTML:
+    <div class="home-eye">♟</div>
+  Замініть на (де logo.png — ваш файл лого поруч з HTML):
+================================================================ -->
+<!-- 
+  Варіант А (зовнішній файл, logo.png поруч з HTML):
+  
+  <div class="home-eye">
+    <img src="logo.png" alt="Smart Chess System"
+      style="width:90px;height:90px;object-fit:contain;
+             filter:drop-shadow(0 0 20px rgba(232,184,75,0.4));
+             animation:pulse 3s ease-in-out infinite">
+  </div>
+
+  Варіант Б (base64 вбудований — запустіть apply_patches.py, він автоматично 
+  вбудує logo.png у base64)
+-->
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+  ЗМІНА 2: ВИПРАВЛЕННЯ ГРАМАТИКИ (називний відмінок замість родового)
+  
+  Знайдіть у функції qCoord() три рядки:
+================================================================ -->
+<!-- 
+  БУЛО:
+    text:`На якій горизонталі стоїть ${preciseLabelAcc(p)}?`,
+  СТАЛО:
+    text:`На якій горизонталі стоїть ${preciseLabel(p)}?`,
+
+  БУЛО:
+    text:`На якій лінії стоїть ${preciseLabelAcc(p)}?`,
+  СТАЛО:
+    text:`На якій лінії стоїть ${preciseLabel(p)}?`,
+
+  БУЛО:
+    text:`На якому полі стоїть ${preciseLabelAcc(p)}?`,
+  СТАЛО:
+    text:`На якому полі стоїть ${preciseLabel(p)}?`,
+
+  Пояснення: у питанні "На якому полі стоїть X?" — X є підметом
+  (відповідає на "хто? що?"), тому потрібен НАЗИВНИЙ відмінок.
+  preciseLabel(p) → "Білий кінь ферзевого флангу" ✅
+  preciseLabelAcc(p) → "білого коня ферзевого флангу" ✗
+-->
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+  ЗМІНА 3: ПАНЕЛЬ ТРЕНЕРА — кнопка "← Головна" ВГОРУ
+  
+  Знайдіть у HTML-блоці sTrainerDashboard:
+================================================================ -->
+<!--
+  БУЛО (у screen-header):
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-outline btn-sm" onclick="trainerRefresh()">🔄</button>
+      <button class="btn btn-sm" onclick="exportExcel()">⬇ Excel</button>
+    </div>
+
+  СТАЛО:
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-outline btn-sm" onclick="goHome()">← Головна</button>
+      <button class="btn btn-outline btn-sm" onclick="trainerRefresh()">🔄</button>
+      <button class="btn btn-sm" onclick="exportExcel()">⬇ Excel</button>
+    </div>
+
+  І ВИДАЛІТЬ внизу:
+    <button class="btn btn-outline" style="margin-top:12px" onclick="goHome()">← Головна</button>
+-->
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+  ЗМІНА 4: ВИДАЛЕННЯ УЧНЯ У ПАНЕЛІ ТРЕНЕРА
+================================================================ -->
+
+<!-- 4а. Додайте нову функцію JS (перед "// ── Current player name ──"):
+-->
+<script type="text/patch-4a">
+// ── Delete student from Firebase ──
+async function trainerDeletePlayer(key, name){
+  if(!fbDB){ notif('Firebase не підключено'); return; }
+  if(!confirm(`Видалити учня "${name}"? Всі дані буде втрачено назавжди.`)) return;
+  try{
+    await fbDB.ref(`${FB_ROOT}/players/${key}`).remove();
+    delete trainerData[key];
+    renderTrainerSummary();
+    trainerFilterRender();
+    notif(`✅ Учня "${name}" видалено`);
+  }catch(e){
+    notif('Помилка видалення: '+e.message);
+  }
+}
+</script>
+
+<!-- 4б. Замініть шаблон рядка в trainerFilterRender():
+
+  БУЛО:
+    html+=`
+      <div class="trainer-row" onclick="trainerShowPlayer('${p.key}')">
+        <div class="tr-rank">${medal}</div>
+        <div class="tr-info">
+          <div class="tr-name">${p.name||'?'}</div>
+          <div class="tr-meta">✅${p.total?.c||0} ❌${p.total?.w||0} · глиб.${p.best||0} · ${p.lastSeen||'—'}</div>
+          <div class="tr-bar"><div class="tr-bar-fill" style="width:${pct}%"></div></div>
+          <div style="margin-top:4px">${catHtml}</div>
+        </div>
+        <div class="tr-pct">${pct}%</div>
+      </div>`;
+
+  СТАЛО:
+    html+=`
+      <div class="trainer-row" style="cursor:default">
+        <div onclick="trainerShowPlayer('${p.key}')" style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer">
+          <div class="tr-rank">${medal}</div>
+          <div class="tr-info">
+            <div class="tr-name">${p.name||'?'}</div>
+            <div class="tr-meta">✅${p.total?.c||0} ❌${p.total?.w||0} · глиб.${p.best||0} · ${p.lastSeen||'—'}</div>
+            <div class="tr-bar"><div class="tr-bar-fill" style="width:${pct}%"></div></div>
+            <div style="margin-top:4px">${catHtml}</div>
+          </div>
+          <div class="tr-pct">${pct}%</div>
+        </div>
+        <button class="p-item-del"
+          onclick="trainerDeletePlayer('${p.key}','${(p.name||'').replace(/'/g,"\'")}')"
+          title="Видалити учня">✕</button>
+      </div>`;
+-->
